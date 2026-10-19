@@ -1,29 +1,33 @@
 # PROJE: DETAY STOK SAYIM UYGULAMASI - AI HAFIZA DOSYASI
+_Son güncelleme: 19.10.2026_
 
-## 1. Temel Kural
-- **Asla onaysız uygulamaya/kodlamaya geçilmeyecek.** Her aşamada onay alınacak.
-- Ana kaynak her zaman `UYGULAMA NE YAPACAK.docx` dosyasıdır. Değişiklikler oradan takip edilecek.
+## 0. Temel Kurallar
+- Kaynaklar:
+  - `UYGULAMA NE YAPACAK.docx` (ana felsefe)
+  - `UYGULAMA SÜRECİ WHATSAPP KONUŞMALARI.docx` (malzeme seçimi + DİĞER kuralı)
+  - `BENZER BİR UYGULAMAYA DAİR GÖRSELLER/` (3 SS + tasarım talimatı docx: özellikler referans, arayüz premium/modern/şık)
+  - `Duran Varlık Sayım Datası.xlsx` (11 sütunlu veri şablonu)
+  - `KULLANACAKSAN LOGO/` (marka logoları)
 
-## 2. Genel Felsefe ve Amaç
-- Detay Stok firması çalışanlarının mobil, tablet ve bilgisayar üzerinden Excel mantığıyla, pratik bir şekilde sayım yapmasını sağlayan bir sistem.
-- Cihaz kamerası aktif olarak kullanılacak.
+## 1. Amaç ve Google Drive Veritabanı Kuralı
+- Detay Stok çalışanları mobil, tablet ve bilgisayardan girerek Excel düzeninde duran varlık (demirbaş) sayımı yapar.
+- **Veritabanı Google Drive üzerinde çalışır:**
+  - Her operasyon `Operasyonlar/{OP_KODU}/` klasöründe kendi canlı Excel dosyası (`{OP_KODU}_Duran_Varlik_Sayim_Datasi.xlsx`) ve barkod ID'li fotoğraflar klasörüyle (`Fotograflar/{BARKOD}.webp`) saklanır.
+  - Yönetici panelinden Google Drive Bulut Köprüsü (Google Apps Script Webhook) ile doğrudan kurumsal Google Drive hesabına senkronize edilir.
 
-## 3. Kullanıcı Tipleri ve Görevleri
-**A. Saha Çalışanı (Mobil/Tablet Kullanıcısı)**
-- Cihaz kamerasını kullanarak ürünlerin **barkodlarını okutacak.**
-- Aynı zamanda sayımını yaptığı ürünün **fotoğrafını çekecek** ve bu fotoğraf direkt o ürünün barkod ID'si ile eşleşecek.
-- Uygulama indirme derdi yok. Doğrudan WhatsApp'tan vb. gelen **QR kod veya link ile** sisteme anında girecek.
+## 2. Kesinleşen İş Kuralları
+1. **Barkod Eşsizliği:** Barkodlar TC Kimlik numarası gibi her ürüne özel ve EŞSİZ (unique) çalışır. Tekrar okutulursa uyarı verir ve kimin/nerede/ne zaman saydığını gösterir.
+2. **Zorunlu Alanlar:** Sadece **Barkod** ve **Ürün Açıklaması** (ve aktif **Lokasyon**) zorunludur. Fotoğraf dahil diğer tüm alanlar opsiyoneldir.
+3. **Lokasyon (Oda/Bölge) Kilidi:** Sayıma başlamadan önce `3340` veya `Kaplan Toplantı Odası` gibi serbest metin lokasyon girilmesi zorunludur. Oda değiştiğinde state/session kilidi üzerinden güncellenir.
+4. **Esnek Fire & Sayım Modu:**
+   - Mod A: Sıfırdan boş listeye sayım.
+   - Mod B: Eski envanter listesi yüklenip **Bulunan / Fire (Eksik) / Fazla** karşılaştırması.
+5. **Fotoğraf:** Her ürün için tek kare fotoğraf çekilir ve barkod numarası ID'si ile (`{barkod}.webp`) kaydedilir.
+6. **Malzeme Seçimi + DİĞER:** Ana başlıklar (Mobilya, Teknolojik Alet, Beyaz Eşya, Ofis Malzemesi, Otomobil, Tekstil) -> Alt çeşitler (Masa, Sandalye, Saat, Kanepe, Keson, Askılık vb.) + **DİĞER** sekmesi (serbest klavye girişi).
+7. **Operasyona Özel QR / Link:** Patron/yönetici panelden her operasyon için sadece o operasyonda geçerli özel QR kod ve WhatsApp linki üretir.
 
-**B. Patron ve Yöneticiler (Dashboard Kullanıcısı)**
-- Bilgisayar/Tablet üzerinden sadece yetkililerin erişebileceği bir **Yönetici Paneli (Dashboard)** kullanılacak.
-- Excel'deki verilerin tamamına ve tüm ürün detaylarına bu panelden hakim olacaklar.
-- Yeni bir sayım işlemi (başka bir gün veya başka bir firmanın sayımı) ayrı bir **Operasyon Numarası/İsmi** altında oluşturulacak.
-
-## 4. Özel İş Kuralları (Operasyon ve QR/Link Yönetimi)
-- Patron/Yönetici, panelden her bir operasyon (örn. X firması projesi) için **özel bir QR kod veya bağlantı (link) üretebilecek.**
-- Üretilen bu link/QR kod **SADECE o operasyon için geçerli olacak.** 
-- Böylece çalışan, X operasyonunun QR kodunu okuttuğunda sadece X operasyonuna veri girecek, veriler diğer günlerin/firmaların sayımlarıyla asla karışmayacak.
-
-## 5. Teknik Altyapı Notları
-- **Platform:** PWA (Progressive Web App - İndirmeden çalışan, kameraya erişebilen web uygulaması)
-- **Versiyon Kontrol:** Tüm kodlar `https://github.com/danismanws-sudo/stoksayim.git` reposuna senkronize edilecek.
+## 3. Uygulama Mimarisi (`web/` klasörü)
+- **Ana Sayfa (`/`):** Rol seçimi, operasyon davet kodu girişi, hızlı erişim.
+- **Saha Katılım (`/j/[token]`):** WhatsApp/QR linkiyle şifresiz Ad-Soyad + Telefon girişi.
+- **Saha Sayım Ekranı (`/sayim/[opId]`):** Zorunlu lokasyon kilidi, kamera barkod tarayıcı, eşsiz barkod kontrolü, malzeme + DİĞER seçimi, tek fotoğraf çekimi, çevrimdışı kuyruk.
+- **Yönetici & Patron Dashboard (`/panel`):** Canlı Excel tablosu, Fire karşılaştırma motoru, QR/WhatsApp link üretici, malzeme çeşitleri yönetimi ve Google Drive bağlantı ayarları.

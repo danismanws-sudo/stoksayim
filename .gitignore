@@ -1,0 +1,21 @@
+# Taşınabilir Git (yerel araç)
+.mingit/
+
+# Müşteri / iç dokümanlar — gizli tutulur, repoya yüklenmez
+*.docx
+*.xlsx
+*.xls
+BENZER BİR UYGULAMAYA DAİR GÖRSELLER/
+KULLANACAKSAN LOGO/
+DETAY STOK SAYIM İNTERNET SİTESİ linki.txt
+
+# Ortam değişkenleri
+.env
+.env.*
+!.env.example
+
+# İşletim sistemi ve yerel çalışma verileri
+Thumbs.db
+.DS_Store
+web/drive-data/
+
