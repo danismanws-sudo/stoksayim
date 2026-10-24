@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import type {
@@ -61,7 +62,9 @@ export interface DatabaseState {
 
 const DATA_ROOT = process.env.DRIVE_LOCAL_DIR
   ? path.resolve(process.env.DRIVE_LOCAL_DIR)
-  : path.join(process.cwd(), "drive-data");
+  : process.env.VERCEL
+    ? path.join(os.tmpdir(), "detay-drive-data")
+    : path.join(process.cwd(), "drive-data");
 
 const DB_FILE = path.join(DATA_ROOT, "db.json");
 
