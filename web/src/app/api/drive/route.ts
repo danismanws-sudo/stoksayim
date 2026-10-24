@@ -5,8 +5,14 @@ import {
   pushToGoogleDriveWebhook,
   readDB,
   saveItemPhoto,
+  syncAllOperationsToGoogleDrive,
   writeOperationExcelFile,
 } from "@/lib/drive-store";
+import {
+  ensureOperationDriveFolders,
+  isGoogleDriveConnected,
+  uploadExpectedListToGoogleDrive,
+} from "@/lib/google-drive-api";
 import type { ExpectedItem, ItemCondition, OperationMode, OperationStatus } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
@@ -246,7 +252,14 @@ export async function POST(req: NextRequest) {
         if (photoBase64) {
           const raw = photoBase64.replace(/^data:[^;]+;base64,/, "");
           const buf = Buffer.from(raw, "base64");
-          photoPath = await saveItemPhoto(op.code, draft.barcode.trim(), buf, "webp");
+          photoPath = await saveItemPhoto(
+            op.code,
+            draft.barcode.trim(),
+            buf,
+            "webp",
+            op.name,
+            db.driveConfig.folderName || "DETAY STOK SAYIM",
+          );
         }
 
         const cat = db.categories.find((c) => c.id === draft.category_id);
@@ -374,7 +387,14 @@ export async function POST(req: NextRequest) {
         };
         db.operation_links.push(link);
 
-        await writeOperationExcelFile(db, opId);
+        if (await isGoogleDriveConnected()) {
+          await ensureOperationDriveFolders(
+            code,
+            name,
+            db.driveConfig.folderName || "DETAY STOK SAYIM",
+          ).catch(() => {});
+        }
+        await writeOperationExcelFile(db, opId, baseUrl);
         return { op, link };
       });
 
@@ -453,10 +473,25 @@ export async function POST(req: NextRequest) {
           });
           added++;
         }
-        await writeOperationExcelFile(db, opId);
+        await writeOperationExcelFile(db, opId, baseUrl);
+        if (await isGoogleDriveConnected()) {
+          const expRows = db.expected_items.filter((e) => e.operation_id === opId);
+          await uploadExpectedListToGoogleDrive({
+            opCode: op.code,
+            opName: op.name,
+            rows: expRows,
+            rootFolderName: db.driveConfig.folderName || "DETAY STOK SAYIM",
+          }).catch(() => {});
+        }
         return added;
       });
       return NextResponse.json({ added: count });
+    }
+
+    if (action === "sync_drive_folders") {
+      const db = await readDB();
+      await syncAllOperationsToGoogleDrive(db, baseUrl);
+      return NextResponse.json({ ok: true });
     }
 
     if (action === "add_category") {

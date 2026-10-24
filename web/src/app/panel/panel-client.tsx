@@ -115,7 +115,25 @@ export function PanelClient() {
 
   // Drive ayarları
   const [webhookInput, setWebhookInput] = useState("");
-  const [folderInput, setFolderInput] = useState("DETAY_STOK_SAYIM_DRIVE");
+  const [folderInput, setFolderInput] = useState("DETAY STOK SAYIM");
+  const [oauthRefreshToken, setOauthRefreshToken] = useState<string | null>(null);
+  const [syncingDrive, setSyncingDrive] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("drive_connected") === "1") {
+      setTab("settings");
+      const rt = params.get("refresh_token");
+      if (rt) setOauthRefreshToken(rt);
+      toast.success("Google Drive bağlantısı kuruldu ve tüm operasyon klasörleri oluşturuldu!");
+      window.history.replaceState({}, "", "/panel");
+    } else if (params.get("drive_error")) {
+      setTab("settings");
+      toast.error(`Google Drive bağlantı hatası: ${params.get("drive_error")}`);
+      window.history.replaceState({}, "", "/panel");
+    }
+  }, []);
 
   const loadAll = useCallback(async (targetOpId?: string) => {
     try {
@@ -1156,34 +1174,130 @@ export function PanelClient() {
                   </div>
                 </Card>
 
-                {/* Google Drive Veritabanı Köprüsü */}
+                {/* Google Drive Veritabanı & Otomatik Klasör Sistemi */}
                 <Card className="p-5 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-base font-bold">
                         Google Drive Veritabanı & Klasör Yapısı
                       </h3>
                       <p className="text-xs text-ink-dim">
-                        Her operasyon kendi klasöründe Excel (`.xlsx`) ve barkod ID&apos;li fotoğraflarla (`Fotograflar/&#123;barkod&#125;.webp`) saklanır.
+                        Tüm operasyonlar, çekilen fotoğraflar ve Excel dosyaları doğrudan Google Drive hesabınızdaki ilgili klasörlere kaydedilir.
                       </p>
                     </div>
-                    <Badge tone="ok">
-                      <HardDrive className="size-3.5" /> Aktif
-                    </Badge>
+                    {driveConfig?.oauthConnected ? (
+                      <Badge tone="ok">
+                        <HardDrive className="size-3.5" /> Google Drive Bağlı
+                      </Badge>
+                    ) : (
+                      <Badge tone="warn">
+                        <HardDrive className="size-3.5" /> Yetkilendirme Bekleniyor
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* OAuth Bağlantı & Klasör Senkronizasyon Kartı */}
+                  <div className="rounded-2xl border border-brand/35 bg-brand-soft/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-white">
+                          Resmi Google Drive API Bağlantısı
+                        </div>
+                        <div className="text-xs text-ink-dim">
+                          {driveConfig?.oauthConnected
+                            ? `Aktif klasör: ${driveConfig.folderName || "DETAY STOK SAYIM"}${driveConfig.connectedEmail ? ` (${driveConfig.connectedEmail})` : ""}`
+                            : "Aşağıdaki butona tıklayıp Google hesabınızla izin vererek klasörleri otomatik oluşturun."}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <a href="/api/drive/oauth/start">
+                          <Button size="sm" variant={driveConfig?.oauthConnected ? "outline" : "primary"}>
+                            <HardDrive className="size-4" />
+                            <span>
+                              {driveConfig?.oauthConnected
+                                ? "Google Hesabını Yeniden Bağla"
+                                : "Google Drive'a Bağlan & Klasörleri Aç"}
+                            </span>
+                          </Button>
+                        </a>
+                        {driveConfig?.oauthConnected && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            loading={syncingDrive}
+                            onClick={async () => {
+                              setSyncingDrive(true);
+                              try {
+                                const res = await fetch("/api/drive", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ action: "sync_drive_folders" }),
+                                });
+                                if (!res.ok) throw new Error("Senkronizasyon başarısız");
+                                toast.success("Tüm klasörler ve Excel tabloları Google Drive'a senkronize edildi!");
+                                await loadAll(selectedOpId);
+                              } catch (e) {
+                                toast.error(humanError(e));
+                              } finally {
+                                setSyncingDrive(false);
+                              }
+                            }}
+                          >
+                            <RefreshCw className="size-4" /> Şimdi Senkronize Et
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {oauthRefreshToken && (
+                      <div className="rounded-xl border border-ok/40 bg-ok-soft/20 p-3 text-xs space-y-2">
+                        <div className="font-bold text-ok">
+                          Kalıcı Bağlantı Anahtarı (GOOGLE_REFRESH_TOKEN) Üretildi:
+                        </div>
+                        <p className="text-ink-dim">
+                          Bağlantının sunucu yeniden başlasa bile hiç kopmaması için bu değeri kopyalayıp Vercel → Settings → Environment Variables bölümüne <b>GOOGLE_REFRESH_TOKEN</b> adıyla ekleyin:
+                        </p>
+                        <div className="flex gap-2">
+                          <Input
+                            readOnly
+                            value={oauthRefreshToken}
+                            className="h-9 font-mono text-xs"
+                          />
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(oauthRefreshToken);
+                              toast.success("GOOGLE_REFRESH_TOKEN kopyalandı!");
+                            }}
+                          >
+                            <Copy className="size-4" /> Kopyala
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-xl border border-line bg-surface-2 p-3.5 text-xs space-y-1.5">
                     <div className="font-semibold text-ink flex items-center gap-1.5">
-                      <FolderGit2 className="size-4 text-[#9fb1ff]" /> Otomatik Drive Klasör Yapısı:
+                      <FolderGit2 className="size-4 text-[#9fb1ff]" /> Google Drive Klasör Hiyerarşisi:
                     </div>
                     <div className="font-mono text-ink-dim">
-                      📁 drive-data/Operasyonlar/{currentOp.code}/
+                      📁 {folderInput || "DETAY STOK SAYIM"}/
                     </div>
                     <div className="font-mono text-ink-dim pl-4">
+                      ├── 📁 _Sistem/db.json <span className="text-ink-mute">(Ana Veritabanı)</span>
+                    </div>
+                    <div className="font-mono text-ink-dim pl-4">
+                      └── 📁 Operasyonlar/{currentOp.code} - {currentOp.name}/
+                    </div>
+                    <div className="font-mono text-ink-dim pl-10">
                       ├── 📊 {currentOp.code}_Duran_Varlik_Sayim_Datasi.xlsx
                     </div>
-                    <div className="font-mono text-ink-dim pl-4">
-                      └── 📁 Fotograflar/ (Örn: 869897310865.webp)
+                    <div className="font-mono text-ink-dim pl-10">
+                      ├── 📁 Fotograflar/ <span className="text-ink-mute">(Örn: 869897310865.webp)</span>
+                    </div>
+                    <div className="font-mono text-ink-dim pl-10">
+                      └── 📁 Beklenen_Liste/ <span className="text-ink-mute">({currentOp.code}_Beklenen_Liste.json)</span>
                     </div>
                   </div>
 
@@ -1192,18 +1306,6 @@ export function PanelClient() {
                       value={folderInput}
                       onChange={(e) => setFolderInput(e.target.value)}
                       className="h-10"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Google Drive Bulut Webhook URL (Google Apps Script — İsteğe Bağlı)"
-                    hint="Kendi Google Drive hesabınızda otomatik klasör ve fotoğraf oluşturması için aşağıdaki 20 satırlık kodu Google Apps Script'e yapıştırıp URL'sini buraya girebilirsiniz."
-                  >
-                    <Input
-                      value={webhookInput}
-                      onChange={(e) => setWebhookInput(e.target.value)}
-                      placeholder="https://script.google.com/macros/s/....../exec"
-                      className="h-10 font-mono text-xs"
                     />
                   </Field>
 
@@ -1220,27 +1322,13 @@ export function PanelClient() {
                             folderName: folderInput,
                           }),
                         });
-                        toast.success("Google Drive ayarları kaydedildi!");
+                        toast.success("Google Drive klasör ayarları kaydedildi!");
                         await loadAll(selectedOpId);
                       }}
                     >
-                      Drive Ayarlarını Kaydet
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        navigator.clipboard.writeText(APPS_SCRIPT_CODE);
-                        toast.success("Google Drive Apps Script kodu kopyalandı!");
-                      }}
-                    >
-                      <Copy className="size-4" /> Apps Script Kodunu Kopyala
+                      Klasör Adını Kaydet
                     </Button>
                   </div>
-
-                  <pre className="scroll-thin max-h-48 overflow-auto rounded-xl border border-line bg-black/50 p-3 font-mono text-[11px] text-ink-dim">
-                    {APPS_SCRIPT_CODE}
-                  </pre>
                 </Card>
               </div>
             )}
