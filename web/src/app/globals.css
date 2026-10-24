@@ -41,6 +41,50 @@
   }
 }
 
+/* Lazer yukarıdan aşağı indikçe logoyu açar, aşağıdan yukarı çıktıkça siler */
+@keyframes laser-reveal-clip {
+  0%, 4% {
+    clip-path: inset(0% 0% 100% 0%);
+  }
+  48%, 54% {
+    clip-path: inset(0% 0% 0% 0%);
+  }
+  96%, 100% {
+    clip-path: inset(0% 0% 100% 0%);
+  }
+}
+
+@keyframes laser-beam-pos {
+  0%, 4% {
+    top: 0%;
+    opacity: 0.65;
+  }
+  25% {
+    opacity: 1;
+  }
+  48%, 54% {
+    top: 100%;
+    opacity: 0.95;
+  }
+  75% {
+    opacity: 1;
+  }
+  96%, 100% {
+    top: 0%;
+    opacity: 0.65;
+  }
+}
+
+.laser-reveal-mask {
+  animation: laser-reveal-clip 7.5s ease-in-out infinite;
+  will-change: clip-path;
+}
+
+.laser-beam-track {
+  animation: laser-beam-pos 7.5s ease-in-out infinite;
+  will-change: top, opacity;
+}
+
 html {
   color-scheme: dark;
   -webkit-tap-highlight-color: transparent;

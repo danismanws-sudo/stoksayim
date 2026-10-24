@@ -1,22 +1,37 @@
 "use client";
 
-import { Flashlight, FlashlightOff, Keyboard, ScanLine } from "lucide-react";
+import { Camera, Flashlight, FlashlightOff, Keyboard, ScanLine } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const FORMATS = [
-  "qr_code", "ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "code_93",
-  "codabar", "itf", "data_matrix", "pdf417", "aztec",
+  "qr_code",
+  "ean_13",
+  "ean_8",
+  "upc_a",
+  "upc_e",
+  "code_128",
+  "code_39",
+  "code_93",
+  "codabar",
+  "itf",
+  "data_matrix",
+  "pdf417",
+  "aztec",
 ] as const;
 
 interface Detector {
   detect(source: CanvasImageSource): Promise<{ rawValue: string; format: string }[]>;
 }
 
-/** Android Chrome'da yerel BarcodeDetector, diğerlerinde (iPhone) ZXing-WASM. */
+/** Android Chrome'da yerel BarcodeDetector, diğerlerinde (iPhone vb.) ZXing-WASM. */
 async function createDetector(): Promise<Detector> {
   const g = globalThis as unknown as {
-    BarcodeDetector?: { new (o: { formats: string[] }): Detector; getSupportedFormats(): Promise<string[]> };
+    BarcodeDetector?: {
+      new (o: { formats: string[] }): Detector;
+      getSupportedFormats(): Promise<string[]>;
+    };
   };
   if (g.BarcodeDetector) {
     try {
@@ -35,7 +50,9 @@ async function createDetector(): Promise<Detector> {
 
 function beep() {
   try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
     const o = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -63,6 +80,7 @@ export function Scanner({
   onManual: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const snapInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<Detector | null>(null);
   const lastRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
@@ -72,6 +90,7 @@ export function Scanner({
   const [status, setStatus] = useState<"starting" | "ready" | "denied" | "error">("starting");
   const [torchOn, setTorchOn] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
+  const [decodingSnap, setDecodingSnap] = useState(false);
 
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -95,7 +114,11 @@ export function Scanner({
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("no-camera");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -103,10 +126,17 @@ export function Scanner({
         }
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
-        const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] };
+        const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & {
+          torch?: boolean;
+          focusMode?: string[];
+        };
         setTorchAvailable(Boolean(caps.torch));
         if (caps.focusMode?.includes("continuous")) {
-          track.applyConstraints({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] }).catch(() => {});
+          track
+            .applyConstraints({
+              advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+            })
+            .catch(() => {});
         }
 
         const v = videoRef.current!;
@@ -126,7 +156,6 @@ export function Scanner({
             const code = res[0]?.rawValue?.trim();
             if (code) {
               const now = Date.now();
-              // aynı barkodun art arda tetiklenmesini engelle
               if (code !== lastRef.current.code || now - lastRef.current.at > 2500) {
                 lastRef.current = { code, at: now };
                 navigator.vibrate?.(60);
@@ -166,15 +195,59 @@ export function Scanner({
     }
   };
 
+  /** Kamera akışı açılmazsa (veya tek kareyle okutmak istenirse) fotoğraftan barkod çözer */
+  const handleSnapshotScan = async (file: File | undefined) => {
+    if (!file) return;
+    setDecodingSnap(true);
+    try {
+      detectorRef.current ??= await createDetector();
+      const bitmap = await createImageBitmap(file);
+      const res = await detectorRef.current.detect(bitmap);
+      const code = res[0]?.rawValue?.trim();
+      if (code) {
+        navigator.vibrate?.(60);
+        beep();
+        cbRef.current(code);
+      } else {
+        toast.error("Fotoğrafta barkod okunamadı. Barkodu netleştirip tekrar deneyin veya elle girin.");
+      }
+    } catch {
+      toast.error("Barkod çözümlenemedi, lütfen tekrar deneyin.");
+    } finally {
+      setDecodingSnap(false);
+      if (snapInputRef.current) snapInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
-      <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        className="absolute inset-0 h-full w-full object-cover"
+      />
 
-      {/* karartma + çerçeve */}
+      <input
+        ref={snapInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => void handleSnapshotScan(e.target.files?.[0])}
+      />
+
+      {/* Karartma + Vizör Çerçevesi */}
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="relative aspect-[1.45] w-[78%] max-w-md rounded-3xl shadow-[0_0_0_200vmax_rgb(0_0_0/0.55)]">
-          {(["left-0 top-0 border-l-4 border-t-4 rounded-tl-3xl", "right-0 top-0 border-r-4 border-t-4 rounded-tr-3xl",
-            "left-0 bottom-0 border-l-4 border-b-4 rounded-bl-3xl", "right-0 bottom-0 border-r-4 border-b-4 rounded-br-3xl"] as const).map((c) => (
+          {(
+            [
+              "left-0 top-0 border-l-4 border-t-4 rounded-tl-3xl",
+              "right-0 top-0 border-r-4 border-t-4 rounded-tr-3xl",
+              "left-0 bottom-0 border-l-4 border-b-4 rounded-bl-3xl",
+              "right-0 bottom-0 border-r-4 border-b-4 rounded-br-3xl",
+            ] as const
+          ).map((c) => (
             <span key={c} className={cn("absolute size-10 border-scan", c)} />
           ))}
           {status === "ready" && (
@@ -184,27 +257,52 @@ export function Scanner({
       </div>
 
       {status !== "ready" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-8 text-center">
-          <ScanLine className="size-10 text-ink-mute" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center">
+          <ScanLine className="size-10 text-scan" />
           <p className="max-w-xs text-sm text-ink-dim">
             {status === "starting" && "Kamera açılıyor…"}
-            {status === "denied" && "Kamera izni verilmedi. Tarayıcı ayarlarından bu siteye kamera izni verin veya barkodu elle girin."}
-            {status === "error" && "Kamera başlatılamadı. Barkodu elle girebilirsiniz."}
+            {status === "denied" &&
+              "Canlı kamera izni verilmedi veya güvenli bağlantı (HTTPS) gerekiyor. Aşağıdaki butonla doğrudan telefon kamerasını açıp barkodu okutabilirsiniz."}
+            {status === "error" &&
+              "Canlı kamera akışı başlatılamadı. Aşağıdaki butonla telefon kamerasını açarak barkodu okutabilirsiniz."}
           </p>
+          {status !== "starting" && (
+            <button
+              onClick={() => snapInputRef.current?.click()}
+              disabled={decodingSnap}
+              className="flex h-13 items-center gap-2.5 rounded-2xl bg-scan px-6 text-sm font-bold text-white shadow-[0_10px_30px_-8px_rgb(229_36_47/0.75)] active:scale-95"
+            >
+              <Camera className="size-5" />
+              <span>{decodingSnap ? "Barkod Okunuyor…" : "Kamerayı Aç & Barkod Okut"}</span>
+            </button>
+          )}
         </div>
       )}
 
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 p-5">
+      <div className="absolute inset-x-0 bottom-20 flex flex-wrap items-center justify-center gap-2.5 px-5">
+        <button
+          onClick={() => snapInputRef.current?.click()}
+          disabled={decodingSnap}
+          className="glass flex h-12 items-center gap-2 rounded-full px-5 text-sm font-semibold text-ink hover:bg-white/10"
+        >
+          <Camera className="size-4 text-scan" />
+          <span>{decodingSnap ? "Okunuyor…" : "Fotoğrafla Okut"}</span>
+        </button>
+
         <button
           onClick={onManual}
-          className="glass flex h-12 items-center gap-2 rounded-full px-5 text-sm font-semibold text-ink"
+          className="glass flex h-12 items-center gap-2 rounded-full px-5 text-sm font-semibold text-ink hover:bg-white/10"
         >
-          <Keyboard className="size-4" /> Elle gir
+          <Keyboard className="size-4" /> Elle Gir
         </button>
+
         {torchAvailable && (
           <button
             onClick={toggleTorch}
-            className={cn("glass grid size-12 place-items-center rounded-full", torchOn && "bg-warn/30 text-warn")}
+            className={cn(
+              "glass grid size-12 place-items-center rounded-full",
+              torchOn && "bg-warn/30 text-warn",
+            )}
             aria-label="Fener"
           >
             {torchOn ? <FlashlightOff className="size-5" /> : <Flashlight className="size-5" />}

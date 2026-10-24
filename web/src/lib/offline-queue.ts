@@ -107,11 +107,14 @@ let flushing = false;
 export async function flush(): Promise<void> {
   if (flushing || typeof navigator === "undefined" || !navigator.onLine) return;
   flushing = true;
+  let changed = false;
   try {
     const d = await db();
     const all = (await d.getAll("queue"))
       .filter((q) => q.state !== "conflict")
       .sort((a, b) => a.created_at - b.created_at);
+
+    if (all.length === 0) return;
 
     const identity = getSavedIdentity();
 
@@ -143,21 +146,24 @@ export async function flush(): Promise<void> {
               state: "conflict",
               error: "Bu barkod bu operasyonda başka biri tarafından zaten sayılmış.",
             });
+            changed = true;
             continue;
           }
           throw new Error(errData.error ?? "Kayıt gönderilemedi");
         }
 
         await d.delete("queue", q.client_uuid);
+        changed = true;
       } catch (e) {
         const msg = (e as Error)?.message ?? "Gönderilemedi";
         await d.put("queue", { ...q, state: "error", error: msg });
+        changed = true;
         if (!navigator.onLine || msg.includes("fetch")) break;
       }
     }
   } finally {
     flushing = false;
-    emit();
+    if (changed) emit();
   }
 }
 

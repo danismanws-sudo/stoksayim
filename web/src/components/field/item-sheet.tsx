@@ -23,6 +23,15 @@ export interface ItemSubmit {
   updateId: string | null;
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result ?? ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export function ItemSheet({
   open,
   onClose,
@@ -55,21 +64,32 @@ export function ItemSheet({
   const [color, setColor] = useState("");
   const [dimensions, setDimensions] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [condition, setCondition] = useState<ItemCondition | null>(null);
+  const [condition, setCondition] = useState<ItemCondition | null>("saglam");
   const [conditionNote, setConditionNote] = useState("");
   const [assignee, setAssignee] = useState("");
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [keepPhoto, setKeepPhoto] = useState(true);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(true);
   const [saving, setSaving] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLInputElement>(null);
+  const initializedKeyRef = useRef<string | null>(null);
 
-  // Form açıldığında mevcut kayıt / beklenen liste ile doldur
+  // Form YALNIZCA yeni bir barkod/kayıt için açıldığında sıfırlanır;
+  // kullanıcı fotoğraf çekerken veya model/renk yazarken ASLA sıfırlanmaz.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedKeyRef.current = null;
+      return;
+    }
+    const currentKey = `${barcode}::${existing?.id ?? "new"}`;
+    if (initializedKeyRef.current === currentKey) {
+      return;
+    }
+    initializedKeyRef.current = currentKey;
+
     const src = existing;
     setCategoryId(src?.category_id ?? null);
     setTypeId(src?.product_type_id ?? null);
@@ -78,30 +98,34 @@ export function ItemSheet({
     setColor(src?.color ?? prefill?.color ?? "");
     setDimensions(src?.dimensions ?? prefill?.dimensions ?? "");
     setQuantity(String(src?.quantity ?? prefill?.quantity ?? 1));
-    setCondition(src?.condition ?? null);
+    setCondition(src?.condition ?? "saglam");
     setConditionNote(src?.condition_note ?? "");
     setAssignee(src?.assignee ?? prefill?.assignee ?? "");
     setPhoto(null);
     setPhotoPreview(null);
     setKeepPhoto(true);
-    setShowDetails(Boolean(src?.model || src?.color || src?.dimensions || src?.condition || src?.assignee || prefill));
+    setShowDetails(true);
     if (!src && prefill?.category) {
-      const c = categories.find((x) => x.name.toLocaleLowerCase("tr") === prefill.category!.toLocaleLowerCase("tr"));
+      const c = categories.find(
+        (x) => x.name.toLocaleLowerCase("tr") === prefill.category!.toLocaleLowerCase("tr"),
+      );
       if (c) setCategoryId(c.id);
     }
-  }, [open, existing, prefill, categories]);
-
-  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+  }, [open, barcode, existing, prefill, categories]);
 
   const category = categories.find((c) => c.id === categoryId) ?? null;
-  const types = useMemo(() => productTypes.filter((t) => t.category_id === categoryId), [productTypes, categoryId]);
+  const types = useMemo(
+    () => productTypes.filter((t) => t.category_id === categoryId),
+    [productTypes, categoryId],
+  );
 
   const pickCategory = (c: Category) => {
     setCategoryId(c.id);
     setTypeId(null);
     if (c.is_other) {
-      setDescription("");
       setTimeout(() => descRef.current?.focus(), 50);
+    } else if (!description.trim() || categories.some((cat) => cat.name === description.trim())) {
+      setDescription(c.name);
     }
   };
 
@@ -114,15 +138,22 @@ export function ItemSheet({
     if (!f) return;
     setCompressing(true);
     try {
-      const out = await imageCompression(f, {
-        maxSizeMB: 0.35,
-        maxWidthOrHeight: 1600,
-        fileType: "image/webp",
-        initialQuality: 0.8,
-        useWebWorker: true,
-      });
-      setPhoto(out);
-      setPhotoPreview(URL.createObjectURL(out));
+      let blob: Blob = f;
+      try {
+        blob = await imageCompression(f, {
+          maxSizeMB: 0.4,
+          maxWidthOrHeight: 1600,
+          fileType: "image/webp",
+          initialQuality: 0.82,
+          useWebWorker: false,
+        });
+      } catch {
+        // Sıkıştırma desteklenmezse orijinal dosyayı kullan
+        blob = f;
+      }
+      const dataUrl = await blobToDataUrl(blob);
+      setPhoto(blob);
+      setPhotoPreview(dataUrl);
     } catch {
       toast.error("Fotoğraf işlenemedi");
     } finally {
@@ -132,11 +163,16 @@ export function ItemSheet({
   };
 
   const currentPhoto = photoPreview ?? (keepPhoto ? existingPhotoUrl : null);
-  const canSave = barcode.trim() && description.trim() && location.trim();
+  const resolvedDescription =
+    description.trim() || (category && !category.is_other ? category.name : "");
 
   const submit = async () => {
-    if (!canSave) {
-      toast.error("Ürün açıklaması zorunlu");
+    if (!barcode.trim() || !location.trim()) {
+      toast.error("Barkod ve lokasyon bilgisi eksik");
+      return;
+    }
+    if (!resolvedDescription) {
+      toast.error("Lütfen Ürün Cinsi seçin veya Ürün Açıklaması yazın");
       descRef.current?.focus();
       return;
     }
@@ -148,7 +184,7 @@ export function ItemSheet({
           client_uuid: crypto.randomUUID(),
           operation_id: operationId,
           barcode: barcode.trim(),
-          description: description.trim(),
+          description: resolvedDescription,
           location: location.trim(),
           category_id: categoryId,
           product_type_id: typeId,
@@ -175,12 +211,21 @@ export function ItemSheet({
       onClose={onClose}
       title={
         <div className="flex flex-col">
-          <span className="text-xs font-semibold uppercase tracking-wider text-ink-mute">{existing ? "Kaydı düzenle" : "Yeni ürün"}</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
+            {existing ? "Kaydı düzenle" : "Yeni ürün"}
+          </span>
           <span className="font-mono text-lg tracking-wide">{barcode}</span>
         </div>
       }
       footer={
-        <Button size="xl" className="w-full" onClick={submit} loading={saving} disabled={!canSave || compressing}>
+        <Button
+          type="button"
+          size="xl"
+          className="w-full"
+          onClick={submit}
+          loading={saving}
+          disabled={saving || compressing}
+        >
           {existing ? "Güncelle" : "Kaydet"}
         </Button>
       }
@@ -200,6 +245,7 @@ export function ItemSheet({
               const on = c.id === categoryId;
               return (
                 <button
+                  type="button"
                   key={c.id}
                   onClick={() => pickCategory(c)}
                   className={cn(
@@ -224,6 +270,7 @@ export function ItemSheet({
               <div className="flex flex-wrap gap-2">
                 {types.map((t) => (
                   <button
+                    type="button"
                     key={t.id}
                     onClick={() => pickType(t)}
                     className={cn(
@@ -263,10 +310,11 @@ export function ItemSheet({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={currentPhoto} alt="Ürün fotoğrafı" className="aspect-[4/3] w-full object-cover" />
               <div className="absolute inset-x-0 bottom-0 flex gap-2 bg-gradient-to-t from-black/80 to-transparent p-3">
-                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} className="backdrop-blur">
+                <Button type="button" size="sm" variant="outline" onClick={() => fileRef.current?.click()} className="backdrop-blur">
                   <RotateCcw className="size-4" /> Yeniden çek
                 </Button>
                 <Button
+                  type="button"
                   size="sm"
                   variant="danger"
                   onClick={() => {
@@ -281,6 +329,7 @@ export function ItemSheet({
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => fileRef.current?.click()}
               disabled={compressing}
               className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line-strong bg-white/[0.02] text-sm font-semibold text-ink-dim transition hover:bg-white/5"
@@ -293,7 +342,7 @@ export function ItemSheet({
 
         {/* 5) Detaylar (opsiyonel) */}
         <section className="rounded-2xl border border-line">
-          <button onClick={() => setShowDetails((s) => !s)} className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold">
+          <button type="button" onClick={() => setShowDetails((s) => !s)} className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold">
             <span>Detaylar <span className="font-normal text-ink-mute">(isteğe bağlı)</span></span>
             <ChevronDown className={cn("size-4 transition", showDetails && "rotate-180")} />
           </button>
@@ -310,6 +359,7 @@ export function ItemSheet({
                     <div className="grid grid-cols-3 gap-2">
                       {(Object.keys(CONDITION_LABEL) as ItemCondition[]).map((k) => (
                         <button
+                          type="button"
                           key={k}
                           onClick={() => setCondition(condition === k ? null : k)}
                           className={cn(

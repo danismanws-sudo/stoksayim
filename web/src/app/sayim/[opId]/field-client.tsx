@@ -127,7 +127,11 @@ export function FieldClient({ operationId }: { operationId: string }) {
   const openEdit = (it: CountItem) => {
     setPrefill(null);
     setEditing(it);
-    setEditPhotoUrl(it.photo_path ? `/api/drive/photo/${it.photo_path}` : null);
+    setEditPhotoUrl(
+      it.photo_path
+        ? `/api/drive/photo/${it.photo_path}?t=${encodeURIComponent(it.updated_at)}`
+        : null,
+    );
     setBarcode(it.barcode);
   };
 
@@ -402,6 +406,17 @@ export function FieldClient({ operationId }: { operationId: string }) {
                       ? "Gönderilemedi, tekrar denenecek"
                       : "Drive'a gönderiliyor"
                   }
+                  details={
+                    [
+                      q.draft.model && `Model: ${q.draft.model}`,
+                      q.draft.color && `Renk: ${q.draft.color}`,
+                      q.draft.dimensions && `Ölçü: ${q.draft.dimensions}`,
+                      q.draft.quantity > 1 && `Adet: ${q.draft.quantity}`,
+                      q.draft.assignee && `Zimmet: ${q.draft.assignee}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
+                  }
                   pending
                   hasPhoto={Boolean(q.photo)}
                 />
@@ -414,8 +429,23 @@ export function FieldClient({ operationId }: { operationId: string }) {
                 description={it.description}
                 location={it.location}
                 meta={`${it.category_name ?? "Kategori yok"} · ${fmtTime(it.created_at)}`}
+                details={
+                  [
+                    it.model && `Model: ${it.model}`,
+                    it.color && `Renk: ${it.color}`,
+                    it.dimensions && `Ölçü: ${it.dimensions}`,
+                    it.quantity > 1 && `Adet: ${it.quantity}`,
+                    it.assignee && `Zimmet: ${it.assignee}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || undefined
+                }
                 hasPhoto={Boolean(it.photo_path)}
-                photoUrl={it.photo_path ? `/api/drive/photo/${it.photo_path}` : undefined}
+                photoUrl={
+                  it.photo_path
+                    ? `/api/drive/photo/${it.photo_path}?t=${encodeURIComponent(it.updated_at)}`
+                    : undefined
+                }
                 onEdit={() => openEdit(it)}
                 onDelete={() => deleteItem(it)}
               />
@@ -620,6 +650,7 @@ function Row({
   description,
   location,
   meta,
+  details,
   hasPhoto,
   photoUrl,
   pending,
@@ -630,6 +661,7 @@ function Row({
   description: string;
   location: string;
   meta: string;
+  details?: string;
   hasPhoto: boolean;
   photoUrl?: string;
   pending?: boolean;
@@ -650,7 +682,7 @@ function Row({
       >
         <div
           className={cn(
-            "grid size-11 shrink-0 place-items-center overflow-hidden rounded-xl",
+            "grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl",
             hasPhoto ? "bg-ok-soft text-ok" : "bg-white/5 text-ink-mute",
           )}
         >
@@ -658,7 +690,7 @@ function Row({
             <RefreshCw className="size-4.5 animate-spin text-[#9fb1ff]" />
           ) : photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={photoUrl} alt={description} className="size-11 object-cover" />
+            <img src={photoUrl} alt={description} className="size-12 object-cover" />
           ) : hasPhoto ? (
             <ImageIcon className="size-4.5" />
           ) : (
@@ -670,6 +702,9 @@ function Row({
           <div className="truncate text-xs text-ink-mute">
             <span className="font-mono">{barcode}</span> · {location} · {meta}
           </div>
+          {details && (
+            <div className="mt-0.5 truncate text-xs font-medium text-[#9fb1ff]">{details}</div>
+          )}
         </div>
         {onEdit && <ChevronRight className="size-4 shrink-0 text-ink-mute" />}
       </button>

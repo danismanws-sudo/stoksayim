@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Loader2, X } from "lucide-react";
-import Image from "next/image";
 import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -119,16 +118,122 @@ export function Badge({ tone = "neutral", className, children }: { tone?: Tone; 
 }
 
 /* ---------------- Logo ---------------- */
-export function Logo({ className, compact }: { className?: string; compact?: boolean }) {
+export function BarcodeMark({
+  className,
+  animated = false,
+}: {
+  className?: string;
+  animated?: boolean;
+}) {
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <div className="grid size-9 place-items-center rounded-xl bg-white p-1 shadow-lg shadow-black/30">
-        <Image src="/logo-square.png" alt="Detay Stok Sayım" width={36} height={36} className="scale-[1.9]" priority />
+    <svg
+      viewBox="0 0 64 56"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn("shrink-0", className)}
+      aria-hidden="true"
+    >
+      {/* Dört Köşe Kırmızı Vizör Çerçevesi */}
+      <path
+        d="M4 17V9C4 6.79086 5.79086 5 8 5H18"
+        stroke="#E5242F"
+        strokeWidth="3.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M46 5H56C58.2091 5 60 6.79086 60 9V17"
+        stroke="#E5242F"
+        strokeWidth="3.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4 39V47C4 49.2091 5.79086 51 8 51H18"
+        stroke="#E5242F"
+        strokeWidth="3.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M46 51H56C58.2091 51 60 49.2091 60 47V39"
+        stroke="#E5242F"
+        strokeWidth="3.8"
+        strokeLinecap="round"
+      />
+
+      {/* Üst Barkod Çubukları */}
+      <rect x="13" y="13" width="3.2" height="11" rx="1" fill="#E5242F" />
+      <rect x="19" y="13" width="4.8" height="11" rx="1" fill="#E5242F" />
+      <rect x="27" y="13" width="2.8" height="11" rx="1" fill="#E5242F" />
+      <rect x="33" y="13" width="5.2" height="11" rx="1" fill="#E5242F" />
+      <rect x="41" y="13" width="3.0" height="11" rx="1" fill="#E5242F" />
+      <rect x="47" y="13" width="4.0" height="11" rx="1" fill="#E5242F" />
+
+      {/* Alt Barkod Çubukları */}
+      <rect x="13" y="32" width="3.2" height="11" rx="1" fill="#E5242F" />
+      <rect x="19" y="32" width="4.8" height="11" rx="1" fill="#E5242F" />
+      <rect x="27" y="32" width="2.8" height="11" rx="1" fill="#E5242F" />
+      <rect x="33" y="32" width="5.2" height="11" rx="1" fill="#E5242F" />
+      <rect x="41" y="32" width="3.0" height="11" rx="1" fill="#E5242F" />
+      <rect x="47" y="32" width="4.0" height="11" rx="1" fill="#E5242F" />
+
+      {/* Orta Lazer Okuma Çizgisi */}
+      <line
+        x1="3"
+        y1="28"
+        x2="61"
+        y2="28"
+        stroke="#FF2E3B"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        className={animated ? "animate-pulse" : undefined}
+      />
+    </svg>
+  );
+}
+
+export function Logo({
+  className,
+  compact,
+  size = "md",
+}: {
+  className?: string;
+  compact?: boolean;
+  size?: "sm" | "md" | "lg";
+}) {
+  const iconSizes = {
+    sm: "w-9 h-8",
+    md: "w-11 h-10",
+    lg: "w-16 h-14",
+  };
+  const titleSizes = {
+    sm: "text-base",
+    md: "text-xl",
+    lg: "text-3xl",
+  };
+  const subSizes = {
+    sm: "text-[9px] tracking-[0.22em]",
+    md: "text-[11px] tracking-[0.24em]",
+    lg: "text-sm tracking-[0.28em]",
+  };
+
+  return (
+    <div className={cn("inline-flex items-center gap-3 select-none", className)}>
+      <div className="relative grid place-items-center rounded-2xl border border-scan/25 bg-gradient-to-b from-scan/15 to-transparent p-2 shadow-[0_0_25px_-5px_rgb(229_36_47/0.35)]">
+        <BarcodeMark className={iconSizes[size]} animated />
       </div>
       {!compact && (
-        <div className="leading-tight">
-          <div className="text-[15px] font-extrabold tracking-wide">DETAY</div>
-          <div className="text-[10px] font-semibold tracking-[0.2em] text-ink-mute">STOK SAYIM</div>
+        <div className="leading-none">
+          <div
+            className={cn(
+              "font-black tracking-wider bg-gradient-to-r from-white via-[#eef2ff] to-[#9fb1ff] bg-clip-text text-transparent",
+              titleSizes[size],
+            )}
+          >
+            DETAY
+          </div>
+          <div className="my-1 h-[2px] w-full rounded-full bg-gradient-to-r from-brand via-[#5e7aff] to-transparent" />
+          <div className={cn("font-extrabold text-[#8fa4ff]", subSizes[size])}>
+            STOK SAYIM
+          </div>
         </div>
       )}
     </div>

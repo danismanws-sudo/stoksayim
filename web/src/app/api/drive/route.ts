@@ -101,6 +101,17 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const host =
+      req.headers.get("x-forwarded-host") ||
+      req.headers.get("host") ||
+      "localhost:3000";
+    const proto =
+      req.headers.get("x-forwarded-proto") ||
+      (host.includes("localhost") || host.startsWith("127.") || host.startsWith("192.")
+        ? "http"
+        : "https");
+    const baseUrl = `${proto}://${host}`;
+
     const body = await req.json();
     const action = body.action as string;
 
@@ -233,7 +244,7 @@ export async function POST(req: NextRequest) {
 
         let photoPath = keepPhotoPath;
         if (photoBase64) {
-          const raw = photoBase64.replace(/^data:image\/\w+;base64,/, "");
+          const raw = photoBase64.replace(/^data:[^;]+;base64,/, "");
           const buf = Buffer.from(raw, "base64");
           photoPath = await saveItemPhoto(op.code, draft.barcode.trim(), buf, "webp");
         }
@@ -290,7 +301,7 @@ export async function POST(req: NextRequest) {
           db.count_items.push(item);
         }
 
-        await writeOperationExcelFile(db, op.id);
+        await writeOperationExcelFile(db, op.id, baseUrl);
         await pushToGoogleDriveWebhook(db, "save_item", {
           operationCode: op.code,
           operationName: op.name,

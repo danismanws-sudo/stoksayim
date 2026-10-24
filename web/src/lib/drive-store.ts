@@ -375,9 +375,15 @@ export function resolvePhotoFilePath(photoPath: string): string {
  * Operasyonun Excel dosyasını (`Duran Varlık Sayım Datası.xlsx` şablonuyla birebir)
  * üretir ve Drive klasöründeki Excel dosyasını günceller.
  */
-export async function buildOperationExcelBuffer(db: DatabaseState, operationId: string): Promise<Buffer> {
+export async function buildOperationExcelBuffer(
+  db: DatabaseState,
+  operationId: string,
+  baseUrl = "http://localhost:3000",
+): Promise<Buffer> {
   const op = db.operations.find((o) => o.id === operationId);
   if (!op) throw new Error("Operasyon bulunamadı");
+
+  const cleanBase = baseUrl.replace(/\/+$/, "");
 
   const items = db.count_items
     .filter((i) => i.operation_id === operationId)
@@ -400,7 +406,7 @@ export async function buildOperationExcelBuffer(db: DatabaseState, operationId: 
     { header: "Miktar", key: "quantity", width: 12 },
     { header: "Hurda -Sağlam Bilgiisi", key: "condition", width: 24 },
     { header: "Zimmet Durumu", key: "assignee", width: 22 },
-    { header: "Resmi", key: "photo", width: 26 },
+    { header: "Resmi", key: "photo", width: 32 },
     { header: "Lokasyon (Oda/Bölge)", key: "location", width: 22 },
     { header: "Sayan Personel", key: "counter", width: 20 },
     { header: "Sayım Zamanı", key: "time", width: 20 },
@@ -420,7 +426,10 @@ export async function buildOperationExcelBuffer(db: DatabaseState, operationId: 
       .filter(Boolean)
       .join(" - ") || "-";
 
-    ws.addRow({
+    const fileName = it.photo_path ? it.photo_path.split("/")[1] : null;
+    const photoUrl = it.photo_path ? `${cleanBase}/api/drive/photo/${it.photo_path}` : null;
+
+    const row = ws.addRow({
       idx: idx + 1,
       barcode: it.barcode,
       category: it.category_name ?? "-",
@@ -431,11 +440,26 @@ export async function buildOperationExcelBuffer(db: DatabaseState, operationId: 
       quantity: it.quantity ?? 1,
       condition: condText,
       assignee: it.assignee || "-",
-      photo: it.photo_path ? `Fotograflar/${it.photo_path.split("/")[1]}` : "Fotoğraf yok",
+      photo: photoUrl && fileName
+        ? {
+            text: `Fotoğrafı Aç (${fileName})`,
+            hyperlink: photoUrl,
+            tooltip: "Ürünün fotoğrafını tarayıcıda açmak için tıklayın",
+          }
+        : "Fotoğraf yok",
       location: it.location,
       counter: it.counted_by_name ?? "-",
       time: new Date(it.created_at).toLocaleString("tr-TR"),
     });
+
+    if (photoUrl) {
+      const photoCell = row.getCell("photo");
+      photoCell.font = {
+        color: { argb: "FF0563C1" },
+        underline: true,
+        bold: true,
+      };
+    }
   });
 
   // 2) Eğer karşılaştırmalı (Fire) moddaysa Fire & Karşılaştırma sekmesi ekle
@@ -471,13 +495,17 @@ export async function buildOperationExcelBuffer(db: DatabaseState, operationId: 
   return Buffer.from(arrayBuffer);
 }
 
-export async function writeOperationExcelFile(db: DatabaseState, operationId: string): Promise<string | null> {
+export async function writeOperationExcelFile(
+  db: DatabaseState,
+  operationId: string,
+  baseUrl?: string,
+): Promise<string | null> {
   const op = db.operations.find((o) => o.id === operationId);
   if (!op) return null;
   const dir = getOperationDir(op.code);
   await fs.mkdir(dir, { recursive: true });
   const filePath = path.join(dir, `${safePathPart(op.code)}_Duran_Varlik_Sayim_Datasi.xlsx`);
-  const buf = await buildOperationExcelBuffer(db, operationId);
+  const buf = await buildOperationExcelBuffer(db, operationId, baseUrl);
   await fs.writeFile(filePath, buf);
   return filePath;
 }

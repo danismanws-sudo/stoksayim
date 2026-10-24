@@ -3,7 +3,7 @@ import { buildOperationExcelBuffer, readDB, writeOperationExcelFile } from "@/li
 import { safePathPart } from "@/lib/utils";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ opId: string }> },
 ) {
   try {
@@ -13,8 +13,19 @@ export async function GET(
     if (!op) {
       return NextResponse.json({ error: "Operasyon bulunamadı" }, { status: 404 });
     }
-    await writeOperationExcelFile(db, opId);
-    const buf = await buildOperationExcelBuffer(db, opId);
+    const host =
+      req.headers.get("x-forwarded-host") ||
+      req.headers.get("host") ||
+      "localhost:3000";
+    const proto =
+      req.headers.get("x-forwarded-proto") ||
+      (host.includes("localhost") || host.startsWith("127.") || host.startsWith("192.")
+        ? "http"
+        : "https");
+    const baseUrl = `${proto}://${host}`;
+
+    await writeOperationExcelFile(db, opId, baseUrl);
+    const buf = await buildOperationExcelBuffer(db, opId, baseUrl);
     const fileName = `${safePathPart(op.code)}_Duran_Varlik_Sayim_Datasi.xlsx`;
 
     return new NextResponse(new Uint8Array(buf), {
