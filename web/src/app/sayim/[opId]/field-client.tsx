@@ -17,7 +17,6 @@ import {
   UserRound,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ItemSheet, type ItemSubmit } from "@/components/field/item-sheet";
@@ -295,9 +294,6 @@ export function FieldClient({ operationId }: { operationId: string }) {
           <p className="mt-2 text-sm text-ink-dim">
             Bu sayım operasyonu kapatılmış veya bağlantı hatalı olabilir.
           </p>
-          <Link href="/" className="mt-4 inline-block">
-            <Button variant="outline">Ana Sayfaya Dön</Button>
-          </Link>
         </Card>
       </main>
     );

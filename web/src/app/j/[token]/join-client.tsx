@@ -2,7 +2,6 @@
 
 import { ArrowRight, Building2, Hash, ShieldCheck, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -104,9 +103,7 @@ export function JoinClient({ token }: { token: string }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-8 pt-[max(1.5rem,env(safe-area-inset-top))]">
       <div className="flex items-center justify-between">
-        <Link href="/">
-          <Logo />
-        </Link>
+        <Logo />
         <span className="rounded-full border border-line bg-white/[0.03] px-3 py-1 font-mono text-xs text-ink-dim">
           QR / Link Girişi
         </span>
@@ -119,11 +116,8 @@ export function JoinClient({ token }: { token: string }) {
           </div>
           <h1 className="text-xl font-bold">Bağlantı geçersiz</h1>
           <p className="mt-2 text-sm text-ink-dim">
-            {info?.reason ?? "Bağlantı bulunamadı"}. Lütfen yöneticinizden aktif operasyon bağlantısını isteyin.
+            {(info?.reason ?? "Bağlantı bulunamadı").replace(/\.+$/, "")}. Lütfen yöneticinizden aktif operasyon bağlantısını isteyin.
           </p>
-          <Link href="/" className="mt-5 inline-block">
-            <Button variant="outline">Ana Sayfaya Dön</Button>
-          </Link>
         </Card>
       ) : (
         <motion.div
