@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildGoogleOAuthUrl, getOAuthClientCredentials } from "@/lib/google-drive-api";
+import { TEKNIK_COOKIE, verifyTeknikSession } from "@/lib/teknik-auth";
 
 export async function GET(req: NextRequest) {
+  if (!verifyTeknikSession(req.cookies.get(TEKNIK_COOKIE)?.value)) {
+    return NextResponse.redirect(new URL("/teknik", req.url));
+  }
   const { hasClient } = getOAuthClientCredentials();
   if (!hasClient) {
     return NextResponse.json(

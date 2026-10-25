@@ -13,6 +13,7 @@ import {
   isGoogleDriveConnected,
   uploadExpectedListToGoogleDrive,
 } from "@/lib/google-drive-api";
+import { TEKNIK_COOKIE, verifyTeknikSession } from "@/lib/teknik-auth";
 import type { ExpectedItem, ItemCondition, OperationMode, OperationStatus } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
@@ -120,6 +121,14 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const action = body.action as string;
+
+    // Google Drive ayarları yalnızca Teknik Detaylar girişi yapılmışsa değiştirilebilir
+    if (
+      (action === "sync_drive_folders" || action === "save_drive_config") &&
+      !verifyTeknikSession(req.cookies.get(TEKNIK_COOKIE)?.value)
+    ) {
+      return NextResponse.json({ error: "Bu işlem için Teknik Detaylar girişi gerekli." }, { status: 401 });
+    }
 
     if (action === "join_operation") {
       const token = String(body.token ?? "").trim();

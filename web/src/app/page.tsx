@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   LayoutDashboard,
+  Settings2,
   QrCode,
   ScanLine,
   Shield,
@@ -74,11 +75,13 @@ export default function HomePage() {
       {/* Üst Bar — Sade ve Güçlü */}
       <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between">
         <Logo size="md" />
-        <Link href="/panel">
-          <Button size="md" variant="outline" className="rounded-2xl border-white/15 bg-white/[0.03] px-5">
-            <LayoutDashboard className="size-4 text-[#9fb1ff]" />
-            <span>Yönetici Girişi</span>
-          </Button>
+        <Link
+          href="/teknik"
+          aria-label="Teknik Detaylar"
+          title="Teknik Detaylar"
+          className="flex size-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-ink-mute transition hover:border-white/25 hover:text-[#9fb1ff]"
+        >
+          <Settings2 className="size-[18px]" />
         </Link>
       </header>
 

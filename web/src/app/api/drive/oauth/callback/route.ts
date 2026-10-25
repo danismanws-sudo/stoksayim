@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readDB, syncAllOperationsToGoogleDrive } from "@/lib/drive-store";
 import { exchangeCodeForTokens } from "@/lib/google-drive-api";
+import { TEKNIK_COOKIE, verifyTeknikSession } from "@/lib/teknik-auth";
 
 export async function GET(req: NextRequest) {
+  if (!verifyTeknikSession(req.cookies.get(TEKNIK_COOKIE)?.value)) {
+    return NextResponse.redirect(new URL("/teknik", req.url));
+  }
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
@@ -19,7 +23,7 @@ export async function GET(req: NextRequest) {
 
   if (error || !code) {
     return NextResponse.redirect(
-      `${baseUrl}/panel?drive_error=${encodeURIComponent(error || "Yetkilendirme kodu alınamadı")}`,
+      `${baseUrl}/teknik?drive_error=${encodeURIComponent(error || "Yetkilendirme kodu alınamadı")}`,
     );
   }
 
@@ -29,7 +33,7 @@ export async function GET(req: NextRequest) {
     const db = await readDB();
     await syncAllOperationsToGoogleDrive(db, baseUrl);
 
-    const target = new URL(`${baseUrl}/panel`);
+    const target = new URL(`${baseUrl}/teknik`);
     target.searchParams.set("drive_connected", "1");
     if (tokens.refreshToken) {
       target.searchParams.set("refresh_token", tokens.refreshToken);
@@ -40,7 +44,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(target.toString());
   } catch (e) {
     return NextResponse.redirect(
-      `${baseUrl}/panel?drive_error=${encodeURIComponent((e as Error)?.message ?? "OAuth bağlantı hatası")}`,
+      `${baseUrl}/teknik?drive_error=${encodeURIComponent((e as Error)?.message ?? "OAuth bağlantı hatası")}`,
     );
   }
 }
