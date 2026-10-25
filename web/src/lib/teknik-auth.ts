@@ -39,7 +39,8 @@ export function checkTeknikCredentials(email: string, password: string): boolean
   const allowedEmail = (process.env.TEKNIK_EMAIL ?? "").trim().toLowerCase();
   if (!allowedEmail) return false;
   const emailOk = safeEqual(sha256(email.trim().toLowerCase()), sha256(allowedEmail));
-  const envPassword = process.env.TEKNIK_PASSWORD;
+  // Vercel'e yapıştırırken kalan baş/son boşluklar girişi bozmasın
+  const envPassword = process.env.TEKNIK_PASSWORD?.trim();
   const expected = envPassword ? sha256(envPassword) : Buffer.from(DEFAULT_PASSWORD_SHA256, "hex");
   const passOk = safeEqual(sha256(password), expected);
   return emailOk && passOk;
