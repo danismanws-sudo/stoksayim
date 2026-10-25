@@ -12,7 +12,7 @@ import {
   Pencil,
   RefreshCw,
   ScanLine,
-  Sparkles,
+  LogOut,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -72,6 +72,9 @@ export function FieldClient({ operationId }: { operationId: string }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualValue, setManualValue] = useState("");
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [finished, setFinished] = useState<{ name: string; count: number } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -237,6 +240,33 @@ export function FieldClient({ operationId }: { operationId: string }) {
     }
   };
 
+  // Sayımı bitir: bekleyen kayıtlar Drive'a gönderilmeden çıkışa izin verme
+  const finishCount = async () => {
+    setFinishing(true);
+    try {
+      await flush();
+      const left = (await listQueue(operationId)).filter((q) => q.state !== "conflict");
+      await refreshQueue();
+      if (left.length > 0) {
+        toast.error(
+          `${left.length} kayıt henüz Drive'a gönderilemedi. İnternet bağlantınızı kontrol edip tekrar deneyin.`,
+        );
+        return;
+      }
+      try {
+        localStorage.removeItem(`detay:loc:${operationId}`);
+      } catch {
+        /* yoksay */
+      }
+      setFinished({ name: me.name, count: totalCount });
+      setFinishOpen(false);
+    } catch (e) {
+      toast.error(humanError(e));
+    } finally {
+      setFinishing(false);
+    }
+  };
+
   const scannerActive =
     boot === "ok" &&
     tab === "scan" &&
@@ -268,6 +298,23 @@ export function FieldClient({ operationId }: { operationId: string }) {
           <Link href="/" className="mt-4 inline-block">
             <Button variant="outline">Ana Sayfaya Dön</Button>
           </Link>
+        </Card>
+      </main>
+    );
+  }
+
+  if (finished) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-5 p-6 text-center">
+        <Logo />
+        <Card className="w-full p-7">
+          <CheckCircle2 className="mx-auto size-14 text-ok" />
+          <h1 className="mt-4 text-2xl font-bold">Teşekkür ederiz{finished.name ? `, ${finished.name}` : ""}!</h1>
+          <p className="mt-2 text-sm text-ink-dim">
+            <b className="text-ink">{op.name}</b> sayımınız tamamlandı. Toplam{" "}
+            <b className="text-ink">{finished.count}</b> ürün kaydı Google Drive&apos;a kaydedildi.
+          </p>
+          <p className="mt-4 text-xs text-ink-mute">Emeğiniz için teşekkürler. Bu sayfayı kapatabilirsiniz.</p>
         </Card>
       </main>
     );
@@ -336,20 +383,6 @@ export function FieldClient({ operationId }: { operationId: string }) {
               setManualOpen(true);
             }}
           />
-
-          {/* Test / Hızlı Barkod Simülasyon Butonu */}
-          <div className="absolute right-4 top-4 z-10 flex flex-col gap-2">
-            <button
-              onClick={() => {
-                const randomCode = `869${Math.floor(100000000 + Math.random() * 900000000)}`;
-                void handleBarcode(randomCode);
-              }}
-              className="glass flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-ink hover:bg-white/10"
-              title="Kameranız yoksa örnek barkod okutmayı simüle eder"
-            >
-              <Sparkles className="size-3.5 text-warn" /> Test Barkod Okut
-            </button>
-          </div>
 
           <AnimatePresence>
             {lastSaved && (
@@ -455,6 +488,15 @@ export function FieldClient({ operationId }: { operationId: string }) {
                 <p className="text-sm">Henüz ürün sayılmadı.</p>
               </div>
             )}
+
+            <Button
+              variant="danger"
+              size="lg"
+              className="mt-6 w-full"
+              onClick={() => setFinishOpen(true)}
+            >
+              <LogOut className="size-5" /> Sayımı Bitir / Çıkış Yap
+            </Button>
           </div>
         )}
       </div>
@@ -485,6 +527,33 @@ export function FieldClient({ operationId }: { operationId: string }) {
           ))}
         </div>
       </nav>
+
+      {/* ---------- Sayımı Bitir Onayı ---------- */}
+      <Sheet
+        open={finishOpen}
+        onClose={() => !finishing && setFinishOpen(false)}
+        title="Sayımı bitirmek istediğinize emin misiniz?"
+      >
+        <div className="flex flex-col gap-3 pb-2">
+          <p className="text-sm text-ink-dim">
+            Toplam <b className="text-ink">{totalCount}</b> ürün saydınız. Çıkış yaptıktan sonra bu
+            operasyona tekrar katılmak için QR kodu veya linki yeniden açmanız gerekir.
+          </p>
+          {pending > 0 && (
+            <p className="rounded-xl bg-warn-soft p-3 text-xs text-warn">
+              {pending} kayıt henüz Drive&apos;a gönderilmedi; çıkmadan önce gönderilecek.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" disabled={finishing} onClick={() => setFinishOpen(false)}>
+              Vazgeç
+            </Button>
+            <Button variant="danger" loading={finishing} onClick={() => void finishCount()}>
+              Evet, Bitir
+            </Button>
+          </div>
+        </div>
+      </Sheet>
 
       {/* ---------- Alt Paneller ---------- */}
       <LocationSheet
@@ -600,25 +669,6 @@ export function FieldClient({ operationId }: { operationId: string }) {
               placeholder="Örn. 869873245700"
             />
           </Field>
-          <div className="rounded-xl border border-line bg-white/[0.02] p-3 text-xs text-ink-dim">
-            <div className="mb-1.5 font-semibold text-ink">Hızlı Test Barkodları:</div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setManualValue("869873245700")}
-                className="rounded-lg bg-brand-soft px-2.5 py-1 font-mono text-xs text-[#9fb1ff]"
-              >
-                869873245700 (Beklenen Listede: Opel)
-              </button>
-              <button
-                type="button"
-                onClick={() => setManualValue("869897310865")}
-                className="rounded-lg bg-scan-soft px-2.5 py-1 font-mono text-xs text-[#ff9aa0]"
-              >
-                869897310865 (Mükerrer Barkod Testi)
-              </button>
-            </div>
-          </div>
         </form>
       </Sheet>
     </main>
