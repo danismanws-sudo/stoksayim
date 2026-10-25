@@ -9,6 +9,8 @@ import {
   FileSpreadsheet,
   FolderGit2,
   HardDrive,
+  Settings2,
+  Tags,
   Image as ImageIcon,
   Layers,
   Link2,
@@ -45,7 +47,7 @@ import { CONDITION_LABEL, MODE_LABEL, STATUS_LABEL } from "@/lib/types";
 import { cn, fmtDateTime, humanError } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/version";
 
-type PanelTab = "table" | "compare" | "qr" | "settings";
+type PanelTab = "table" | "compare" | "qr" | "materials" | "settings";
 
 const APPS_SCRIPT_CODE = `// Google Drive -> Yeni -> Google Apps Script içine yapıştırıp "Web Uygulaması Olarak Dağıt" (Herkes erişebilir) seçin:
 function doPost(e) {
@@ -507,7 +509,8 @@ export function PanelClient() {
                       Layers,
                     ],
                     ["qr", `Operasyona Özel QR & Link (${links.length})`, QrCode],
-                    ["settings", "Malzeme Çeşitleri & Drive Ayarları", HardDrive],
+                    ["materials", "Malzeme Çeşitleri", Tags],
+                    ["settings", "Teknik Detaylar", Settings2],
                   ] as const
                 ).map(([k, label, Icon]) => (
                   <button
@@ -1045,10 +1048,10 @@ export function PanelClient() {
             )}
 
             {/* =====================================================================
-                SEKME 4: MALZEME ÇEŞİTLERİ & GOOGLE DRIVE AYARLARI
+                SEKME 4: MALZEME ÇEŞİTLERİ
             ===================================================================== */}
-            {tab === "settings" && (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {tab === "materials" && (
+              <div className="mx-auto w-full max-w-3xl">
                 {/* Malzeme Seçimi ve DİĞER Kuralı Yönetimi */}
                 <Card className="p-5 space-y-5">
                   <div>
@@ -1177,8 +1180,14 @@ export function PanelClient() {
                     })}
                   </div>
                 </Card>
+              </div>
+            )}
 
-                {/* Google Drive Veritabanı & Otomatik Klasör Sistemi */}
+            {/* =====================================================================
+                TEKNİK DETAYLAR — Google Drive Veritabanı & Otomatik Klasör Sistemi
+               ===================================================================== */}
+            {tab === "settings" && (
+              <div className="mx-auto w-full max-w-3xl">
                 <Card className="p-5 space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
