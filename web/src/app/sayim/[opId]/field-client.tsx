@@ -311,8 +311,8 @@ export function FieldClient({ operationId }: { operationId: string }) {
           <CheckCircle2 className="mx-auto size-14 text-ok" />
           <h1 className="mt-4 text-2xl font-bold">Teşekkür ederiz{finished.name ? `, ${finished.name}` : ""}!</h1>
           <p className="mt-2 text-sm text-ink-dim">
-            <b className="text-ink">{op.name}</b> sayımınız tamamlandı. Toplam{" "}
-            <b className="text-ink">{finished.count}</b> ürün kaydı Google Drive&apos;a kaydedildi.
+            Toplam <b className="text-ink">{finished.count}</b> ürün saydınız. Veriler başarıyla
+            kaydedildi.
           </p>
           <p className="mt-4 text-xs text-ink-mute">Emeğiniz için teşekkürler. Bu sayfayı kapatabilirsiniz.</p>
         </Card>
