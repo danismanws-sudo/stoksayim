@@ -13,6 +13,8 @@ export function TeknikLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  // Güvenlik: tarayıcı otomatik doldurmasın diye kutular odaklanana kadar salt okunur
+  const [unlocked, setUnlocked] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +26,12 @@ export function TeknikLogin() {
         body: JSON.stringify({ email, password }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error || "Giriş yapılamadı");
+      if (!res.ok) {
+        setPassword("");
+        throw new Error(data.error || "Giriş yapılamadı");
+      }
+      setEmail("");
+      setPassword("");
       router.refresh();
     } catch (err) {
       toast.error(humanError(err));
@@ -39,7 +46,7 @@ export function TeknikLogin() {
         <Logo size="md" />
       </Link>
       <Card className="w-full max-w-sm p-6">
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} autoComplete="off" className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-xl bg-brand-soft/40 text-[#9fb1ff]">
               <Settings2 className="size-5" />
@@ -52,7 +59,12 @@ export function TeknikLogin() {
           <Field label="Gmail adresi">
             <Input
               type="email"
-              autoComplete="email"
+              name="teknik-e"
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore
+              readOnly={!unlocked}
+              onFocus={() => setUnlocked(true)}
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -62,7 +74,12 @@ export function TeknikLogin() {
           <Field label="Şifre">
             <Input
               type="password"
-              autoComplete="current-password"
+              name="teknik-p"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore
+              readOnly={!unlocked}
+              onFocus={() => setUnlocked(true)}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
