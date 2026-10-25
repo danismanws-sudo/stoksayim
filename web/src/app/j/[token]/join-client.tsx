@@ -150,7 +150,7 @@ export function JoinClient({ token }: { token: string }) {
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Örn. Sinan Aktaşöz"
+                placeholder="Örn. Ahmet YILMAZ"
                 autoComplete="name"
                 autoCapitalize="words"
               />

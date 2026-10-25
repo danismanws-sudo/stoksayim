@@ -1242,7 +1242,7 @@ export function PanelClient() {
             onChange={(e) => setImportText(e.target.value)}
             rows={10}
             className="w-full rounded-xl border border-line-strong bg-surface-2 p-3 font-mono text-xs text-ink outline-none focus:border-brand"
-            placeholder="869897310865;Teknolojik Alet;Bilgisayar;3340;Sinan Aktaşöz"
+            placeholder="869897310865;Teknolojik Alet;Bilgisayar;3340;Ahmet YILMAZ"
           />
         </div>
       </Sheet>

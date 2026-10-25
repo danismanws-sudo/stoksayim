@@ -380,7 +380,7 @@ export function ItemSheet({
                     </Field>
                   )}
                   <Field label="Zimmet (kişi veya yer)" className="col-span-2">
-                    <Input value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="Örn. Sinan Aktaşöz / Genel Ofis" />
+                    <Input value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="Örn. Ahmet YILMAZ / Genel Ofis" />
                   </Field>
                 </div>
               </motion.div>
