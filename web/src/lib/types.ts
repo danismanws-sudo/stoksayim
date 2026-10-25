@@ -89,6 +89,7 @@ export interface CountItem {
   condition_note: string | null;
   assignee: string | null;
   photo_path: string | null;
+  photo_drive_id?: string | null;
   counted_by: string;
   counted_by_name?: string | null;
   category_name?: string | null;

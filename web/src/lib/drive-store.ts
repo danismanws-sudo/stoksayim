@@ -84,6 +84,21 @@ const DATA_ROOT = process.env.DRIVE_LOCAL_DIR
 
 const DB_FILE = path.join(DATA_ROOT, "db.json");
 
+/**
+ * Sunucuda (Vercel) hiçbir veri diske yazılmaz: db.json, fotoğraflar ve Excel dosyaları
+ * yalnızca Google Drive'da tutulur. Yerel geliştirmede `drive-data/` klasörü kullanılmaya devam eder.
+ */
+const DRIVE_ONLY = Boolean(process.env.VERCEL) || process.env.DRIVE_ONLY === "1";
+const DEFAULT_ROOT_FOLDER = "DETAY STOK SAYIM";
+
+async function requireDriveConnection() {
+  if (!(await isGoogleDriveConnected())) {
+    throw new Error(
+      "Google Drive bağlı değil. Tüm veriler yalnızca Google Drive'a kaydedilir; lütfen panelden Google Drive bağlantısını kurun.",
+    );
+  }
+}
+
 function defaultSeed(): DatabaseState {
   const now = new Date().toISOString();
   const catMobilya = "cat-mobilya";
@@ -335,6 +350,7 @@ function defaultSeed(): DatabaseState {
 
 let writeQueue: Promise<unknown> = Promise.resolve();
 let lastCloudPullAt = 0;
+let memoryDBText: string | null = null;
 
 async function ensureDirs() {
   await fs.mkdir(DATA_ROOT, { recursive: true });
@@ -357,7 +373,40 @@ async function enrichDriveConfig(db: DatabaseState): Promise<DatabaseState> {
   return db;
 }
 
+/**
+ * Sadece Google Drive modu: db.json her zaman Drive'dan okunur, sunucu diskine yazılmaz.
+ * Drive'da henüz db.json yoksa başlangıç verisi doğrudan Drive'a yazılır.
+ */
+async function readDBDriveOnly(forceCloudPull: boolean): Promise<DatabaseState> {
+  // Drive bağlı değilken panelin açılıp bağlantının kurulabilmesi için kaydedilmeyen başlangıç verisi döner
+  if (!(await isGoogleDriveConnected())) {
+    const seed = defaultSeed();
+    seed.driveConfig.folderName = DEFAULT_ROOT_FOLDER;
+    return enrichDriveConfig(seed);
+  }
+  if (!forceCloudPull && memoryDBText && Date.now() - lastCloudPullAt <= 3000) {
+    return enrichDriveConfig(JSON.parse(memoryDBText) as DatabaseState);
+  }
+
+  const cloudRaw = await readDBFromGoogleDrive(DEFAULT_ROOT_FOLDER);
+  if (cloudRaw) {
+    memoryDBText = cloudRaw;
+    lastCloudPullAt = Date.now();
+    return enrichDriveConfig(JSON.parse(cloudRaw) as DatabaseState);
+  }
+
+  const seed = defaultSeed();
+  seed.driveConfig.folderName = DEFAULT_ROOT_FOLDER;
+  const jsonText = JSON.stringify(seed, null, 2);
+  await writeDBToGoogleDrive(jsonText, DEFAULT_ROOT_FOLDER);
+  memoryDBText = jsonText;
+  lastCloudPullAt = Date.now();
+  await writeOperationExcelFile(seed, seed.operations[0].id).catch(() => {});
+  return enrichDriveConfig(seed);
+}
+
 export async function readDB(forceCloudPull = false): Promise<DatabaseState> {
+  if (DRIVE_ONLY) return readDBDriveOnly(forceCloudPull);
   await ensureDirs();
   const oauthConnected = await isGoogleDriveConnected();
 
@@ -403,10 +452,20 @@ export async function readDB(forceCloudPull = false): Promise<DatabaseState> {
 
 export async function mutateDB<T>(fn: (db: DatabaseState) => Promise<T> | T): Promise<T> {
   const run = writeQueue.then(async () => {
+    if (DRIVE_ONLY) await requireDriveConnection();
     const db = await readDB(true);
     const result = await fn(db);
     db.driveConfig.lastSyncAt = new Date().toISOString();
     const jsonText = JSON.stringify(db, null, 2);
+
+    if (DRIVE_ONLY) {
+      // Drive'a yazılamazsa kayıt başarısız sayılır; veri sunucuda saklanmaz.
+      await writeDBToGoogleDrive(jsonText, db.driveConfig.folderName || DEFAULT_ROOT_FOLDER);
+      memoryDBText = jsonText;
+      lastCloudPullAt = Date.now();
+      return result;
+    }
+
     await fs.writeFile(DB_FILE, jsonText, "utf8");
     lastCloudPullAt = Date.now();
 
@@ -443,27 +502,38 @@ export async function saveItemPhoto(
   bytes: Buffer,
   ext = "webp",
   opName?: string,
-  rootFolderName = "DETAY STOK SAYIM",
-): Promise<string> {
-  const dir = getPhotosDir(opCode);
-  await fs.mkdir(dir, { recursive: true });
+  rootFolderName = DEFAULT_ROOT_FOLDER,
+): Promise<{ photoPath: string; driveFileId: string | null }> {
   const filename = `${safePathPart(barcode)}.${ext}`;
-  const fullPath = path.join(dir, filename);
-  await fs.writeFile(fullPath, bytes);
-
-  if (await isGoogleDriveConnected()) {
-    await uploadPhotoToGoogleDrive({
+  const photoPath = `${safePathPart(opCode)}/${filename}`;
+  const upload = () =>
+    uploadPhotoToGoogleDrive({
       opCode: safePathPart(opCode),
       opName,
       filename,
       bytes,
       rootFolderName,
-    }).catch((e) => {
+    });
+
+  if (DRIVE_ONLY) {
+    // Fotoğraf yalnızca Drive'a yüklenir; yükleme başarısızsa kayıt da başarısız olur.
+    await requireDriveConnection();
+    return { photoPath, driveFileId: await upload() };
+  }
+
+  const dir = getPhotosDir(opCode);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, filename), bytes);
+
+  let driveFileId: string | null = null;
+  if (await isGoogleDriveConnected()) {
+    driveFileId = await upload().catch((e) => {
       console.error("Google Drive fotoğraf yükleme hatası:", e);
+      return null;
     });
   }
 
-  return `${safePathPart(opCode)}/${filename}`;
+  return { photoPath, driveFileId };
 }
 
 export function resolvePhotoFilePath(photoPath: string): string {
@@ -476,6 +546,14 @@ export function resolvePhotoFilePath(photoPath: string): string {
  * doğrudan Google Drive'daki `Fotograflar` klasöründen indirir.
  */
 export async function readItemPhotoBytes(photoPath: string): Promise<Buffer | null> {
+  if (DRIVE_ONLY) {
+    const [opCode, filename] = photoPath.split("/");
+    if (!opCode || !filename) return null;
+    return downloadPhotoFromGoogleDrive({
+      opCode: safePathPart(opCode),
+      filename: safePathPart(filename),
+    });
+  }
   const localPath = resolvePhotoFilePath(photoPath);
   try {
     return await fs.readFile(localPath);
@@ -551,7 +629,11 @@ export async function buildOperationExcelBuffer(
       .join(" - ") || "-";
 
     const fileName = it.photo_path ? it.photo_path.split("/")[1] : null;
-    const photoUrl = it.photo_path ? `${cleanBase}/api/drive/photo/${it.photo_path}` : null;
+    const photoUrl = it.photo_drive_id
+      ? `https://drive.google.com/file/d/${it.photo_drive_id}/view`
+      : it.photo_path
+        ? `${cleanBase}/api/drive/photo/${it.photo_path}`
+        : null;
 
     const row = ws.addRow({
       idx: idx + 1,
@@ -626,9 +708,25 @@ export async function writeOperationExcelFile(
 ): Promise<string | null> {
   const op = db.operations.find((o) => o.id === operationId);
   if (!op) return null;
+  const fileName = `${safePathPart(op.code)}_Duran_Varlik_Sayim_Datasi.xlsx`;
+
+  if (DRIVE_ONLY) {
+    // Excel db.json'dan her an yeniden üretilebildiği için hata kaydı engellemez.
+    const buf = await buildOperationExcelBuffer(db, operationId, baseUrl);
+    return uploadExcelToGoogleDrive({
+      opCode: safePathPart(op.code),
+      opName: op.name,
+      fileName,
+      bytes: buf,
+      rootFolderName: db.driveConfig.folderName || DEFAULT_ROOT_FOLDER,
+    }).catch((e) => {
+      console.error("Google Drive Excel yükleme hatası:", e);
+      return null;
+    });
+  }
+
   const dir = getOperationDir(op.code);
   await fs.mkdir(dir, { recursive: true });
-  const fileName = `${safePathPart(op.code)}_Duran_Varlik_Sayim_Datasi.xlsx`;
   const filePath = path.join(dir, fileName);
   const buf = await buildOperationExcelBuffer(db, operationId, baseUrl);
   await fs.writeFile(filePath, buf);

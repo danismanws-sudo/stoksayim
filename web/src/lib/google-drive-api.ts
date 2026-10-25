@@ -331,7 +331,8 @@ export async function findDriveFile(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=1`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
-  if (!res.ok) return null;
+  // Arama hatası "dosya yok" ile karıştırılmamalı (aksi halde db.json yanlışlıkla sıfırlanabilir)
+  if (!res.ok) throw new Error(`Drive dosya araması başarısız (${name}): ${res.status}`);
   const data = (await res.json()) as { files?: { id: string }[] };
   const id = data.files?.[0]?.id ?? null;
   if (id) fileIdCache.set(cacheKey, id);
@@ -435,7 +436,8 @@ export async function readDBFromGoogleDrive(
   const fileId = await findDriveFile("db.json", systemFolderId);
   if (!fileId) return null;
   const buf = await downloadDriveFileBuffer(fileId);
-  return buf ? buf.toString("utf8") : null;
+  if (!buf) throw new Error("Google Drive'dan db.json indirilemedi");
+  return buf.toString("utf8");
 }
 
 /**

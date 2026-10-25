@@ -249,17 +249,18 @@ export async function POST(req: NextRequest) {
         }
 
         let photoPath = keepPhotoPath;
+        let photoDriveId: string | null | undefined;
         if (photoBase64) {
           const raw = photoBase64.replace(/^data:[^;]+;base64,/, "");
           const buf = Buffer.from(raw, "base64");
-          photoPath = await saveItemPhoto(
+          ({ photoPath, driveFileId: photoDriveId } = await saveItemPhoto(
             op.code,
             draft.barcode.trim(),
             buf,
             "webp",
             op.name,
             db.driveConfig.folderName || "DETAY STOK SAYIM",
-          );
+          ));
         }
 
         const cat = db.categories.find((c) => c.id === draft.category_id);
@@ -285,6 +286,8 @@ export async function POST(req: NextRequest) {
             condition_note: draft.condition_note,
             assignee: draft.assignee,
             photo_path: photoPath,
+            photo_drive_id:
+              photoDriveId !== undefined ? photoDriveId : photoPath ? item.photo_drive_id ?? null : null,
             updated_at: now,
           });
         } else {
@@ -306,6 +309,7 @@ export async function POST(req: NextRequest) {
             condition_note: draft.condition_note,
             assignee: draft.assignee,
             photo_path: photoPath,
+            photo_drive_id: photoDriveId ?? null,
             counted_by: countedBy,
             counted_by_name: countedByName,
             created_at: now,
