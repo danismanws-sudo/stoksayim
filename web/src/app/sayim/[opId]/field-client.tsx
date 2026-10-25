@@ -278,9 +278,7 @@ export function FieldClient({ operationId }: { operationId: string }) {
       {/* ---------- Üst Bar ---------- */}
       <header className="z-20 flex flex-col gap-2 border-b border-line bg-bg/85 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <Link href="/">
-            <Logo compact />
-          </Link>
+          <Logo compact />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[15px] font-bold leading-tight">{op.name}</div>
             <div className="truncate text-xs text-ink-mute">
