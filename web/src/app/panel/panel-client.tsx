@@ -43,6 +43,7 @@ import type {
 } from "@/lib/types";
 import { CONDITION_LABEL, MODE_LABEL, STATUS_LABEL } from "@/lib/types";
 import { cn, fmtDateTime, humanError } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/version";
 
 type PanelTab = "table" | "compare" | "qr" | "settings";
 
@@ -374,6 +375,9 @@ export function PanelClient() {
             <Link href="/">
               <Logo />
             </Link>
+            <span className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-ink-mute">
+              {APP_VERSION}
+            </span>
             <span className="hidden h-6 w-px bg-line sm:block" />
             <div className="hidden sm:block">
               <div className="text-xs font-semibold uppercase tracking-wider text-ink-mute">

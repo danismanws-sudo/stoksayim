@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Scanner } from "@/components/field/scanner";
 import { Button, Input, Logo, Sheet } from "@/components/ui";
+import { APP_VERSION } from "@/lib/version";
 
 function parseQrToken(raw: string): string {
   const val = raw.trim();
@@ -291,7 +292,10 @@ export default function HomePage() {
 
       {/* Alt Bilgi — Çok Sade */}
       <footer className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between border-t border-white/[0.06] pt-4 text-xs text-ink-mute">
-        <span>© 2026 Detay Stok Sayım</span>
+        <span>
+          © 2026 Detay Stok Sayım
+          <span className="ml-2 font-mono text-ink-mute/70">{APP_VERSION}</span>
+        </span>
         <span className="font-mono tracking-wider">DETAY ENVANTER & SAYIM PORTALI</span>
       </footer>
     </main>
