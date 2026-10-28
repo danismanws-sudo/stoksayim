@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createSession, normalizeEmail, safeEqual, sessionSecret, sha256, verifySession } from "./auth-core";
 
 /**
  * Teknik Detaylar (Google Drive ayarları) girişi.
@@ -11,18 +11,9 @@ const DEFAULT_PASSWORD_SHA256 = "08c8c0e5d592540fdb3c03ddebbf2fd26ec029117e1bc74
 export const TEKNIK_COOKIE = "teknik_session";
 export const TEKNIK_SESSION_MAX_AGE = 60 * 60 * 12; // 12 saat
 
-function sha256(val: string) {
-  return createHash("sha256").update(val, "utf8").digest();
-}
-
-function safeEqual(a: Buffer, b: Buffer) {
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function sessionSecret(): string | null {
-  return (
-    process.env.TEKNIK_SESSION_SECRET?.trim() || process.env.GOOGLE_CLIENT_SECRET?.trim() || null
-  );
+function allowedEmails() {
+  const email = normalizeEmail(process.env.TEKNIK_EMAIL ?? "");
+  return email ? [email] : [];
 }
 
 export function teknikLoginConfigError(): string | null {
@@ -36,9 +27,9 @@ export function teknikLoginConfigError(): string | null {
 }
 
 export function checkTeknikCredentials(email: string, password: string): boolean {
-  const allowedEmail = (process.env.TEKNIK_EMAIL ?? "").trim().toLowerCase();
+  const [allowedEmail] = allowedEmails();
   if (!allowedEmail) return false;
-  const emailOk = safeEqual(sha256(email.trim().toLowerCase()), sha256(allowedEmail));
+  const emailOk = safeEqual(sha256(normalizeEmail(email)), sha256(allowedEmail));
   // Vercel'e yapıştırırken kalan baş/son boşluklar girişi bozmasın
   const envPassword = process.env.TEKNIK_PASSWORD?.trim();
   const expected = envPassword ? sha256(envPassword) : Buffer.from(DEFAULT_PASSWORD_SHA256, "hex");
@@ -46,29 +37,10 @@ export function checkTeknikCredentials(email: string, password: string): boolean
   return emailOk && passOk;
 }
 
-function sign(payload: string, secret: string) {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
-}
-
 export function createTeknikSession(email: string): string {
-  const secret = sessionSecret();
-  if (!secret) throw new Error("Oturum anahtarı tanımlı değil");
-  const exp = Date.now() + TEKNIK_SESSION_MAX_AGE * 1000;
-  const payload = `${exp}.${Buffer.from(email.trim().toLowerCase()).toString("base64url")}`;
-  return `${payload}.${sign(payload, secret)}`;
+  return createSession("teknik", email, TEKNIK_SESSION_MAX_AGE);
 }
 
 export function verifyTeknikSession(token: string | undefined | null): boolean {
-  const secret = sessionSecret();
-  if (!token || !secret) return false;
-  const lastDot = token.lastIndexOf(".");
-  if (lastDot < 0) return false;
-  const payload = token.slice(0, lastDot);
-  const sig = token.slice(lastDot + 1);
-  if (!safeEqual(Buffer.from(sig), Buffer.from(sign(payload, secret)))) return false;
-  const [expStr, emailB64] = payload.split(".");
-  if (!(Number(expStr) > Date.now())) return false;
-  // TEKNIK_EMAIL değiştirilirse eski oturumlar geçersiz olur
-  const allowedEmail = (process.env.TEKNIK_EMAIL ?? "").trim().toLowerCase();
-  return Buffer.from(emailB64 ?? "", "base64url").toString() === allowedEmail;
+  return verifySession("teknik", token, allowedEmails()) !== null;
 }

@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildOperationExcelBuffer, readDB, writeOperationExcelFile } from "@/lib/drive-store";
+import { PANEL_COOKIE, verifyPanelSession } from "@/lib/panel-auth";
 import { safePathPart } from "@/lib/utils";
 
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ opId: string }> },
 ) {
+  if (!verifyPanelSession(req.cookies.get(PANEL_COOKIE)?.value)) {
+    return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
+  }
   try {
     const { opId } = await context.params;
     const db = await readDB();

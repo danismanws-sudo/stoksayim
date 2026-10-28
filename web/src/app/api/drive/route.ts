@@ -13,13 +13,48 @@ import {
   isGoogleDriveConnected,
   uploadExpectedListToGoogleDrive,
 } from "@/lib/google-drive-api";
+import { PANEL_COOKIE, verifyPanelSession } from "@/lib/panel-auth";
 import { TEKNIK_COOKIE, verifyTeknikSession } from "@/lib/teknik-auth";
 import type { ExpectedItem, ItemCondition, OperationMode, OperationStatus } from "@/lib/types";
+
+// Saha personeli (QR/link ile gelen) bu işlemleri kullanır; geri kalanlar yönetici paneli girişi ister
+const FIELD_ACTIONS = new Set(["join_operation", "lookup_barcode", "save_item", "delete_item"]);
+const TEKNIK_ACTIONS = new Set(["sync_drive_folders", "save_drive_config"]);
+
+function isPanelAuthed(req: NextRequest) {
+  return verifyPanelSession(req.cookies.get(PANEL_COOKIE)?.value);
+}
+
+function isTeknikAuthed(req: NextRequest) {
+  return verifyTeknikSession(req.cookies.get(TEKNIK_COOKIE)?.value);
+}
+
+function parseLocations(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : String(raw ?? "").split(/\r?\n/);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of list) {
+    const t = String(v ?? "").trim().slice(0, 80);
+    const key = t.toLocaleLowerCase("tr");
+    if (t && !seen.has(key)) {
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out.slice(0, 300);
+}
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
   const opId = url.searchParams.get("opId");
+  const panelAuthed = isPanelAuthed(req);
+
+  // Tam yönetim özeti (tüm operasyonlar, kişiler, telefonlar) sadece panel / teknik girişiyle
+  if (!token && !opId && !panelAuthed && !isTeknikAuthed(req)) {
+    return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
+  }
+
   const db = await readDB();
 
   if (token) {
@@ -71,12 +106,15 @@ export async function GET(req: NextRequest) {
 
     // Lokasyon önerileri
     const locMap = new Map<string, number>();
+    for (const l of op.locations ?? []) locMap.set(l, 0);
     for (const it of items) {
       locMap.set(it.location, (locMap.get(it.location) ?? 0) + 1);
     }
+    const predefined = new Set(op.locations ?? []);
     const locations = Array.from(locMap.entries()).map(([location, item_count]) => ({
       location,
       item_count,
+      predefined: predefined.has(location),
     }));
 
     return NextResponse.json({
@@ -86,8 +124,9 @@ export async function GET(req: NextRequest) {
       items,
       expected,
       compare,
-      links,
-      members,
+      // QR bağlantıları ve personel telefonları sadece yöneticiye
+      links: panelAuthed ? links : [],
+      members: panelAuthed ? members : [],
       locations,
       driveConfig: db.driveConfig,
     });
@@ -123,11 +162,12 @@ export async function POST(req: NextRequest) {
     const action = body.action as string;
 
     // Google Drive ayarları yalnızca Teknik Detaylar girişi yapılmışsa değiştirilebilir
-    if (
-      (action === "sync_drive_folders" || action === "save_drive_config") &&
-      !verifyTeknikSession(req.cookies.get(TEKNIK_COOKIE)?.value)
-    ) {
-      return NextResponse.json({ error: "Bu işlem için Teknik Detaylar girişi gerekli." }, { status: 401 });
+    if (TEKNIK_ACTIONS.has(action)) {
+      if (!isTeknikAuthed(req)) {
+        return NextResponse.json({ error: "Bu işlem için Teknik Detaylar girişi gerekli." }, { status: 401 });
+      }
+    } else if (!FIELD_ACTIONS.has(action) && !isPanelAuthed(req)) {
+      return NextResponse.json({ error: "Bu işlem için yönetici paneli girişi gerekli." }, { status: 401 });
     }
 
     if (action === "join_operation") {
@@ -242,6 +282,9 @@ export async function POST(req: NextRequest) {
       const saved = await mutateDB(async (db) => {
         const op = db.operations.find((o) => o.id === draft.operation_id);
         if (!op) throw new Error("Operasyon bulunamadı");
+        if (op.status !== "active" && !isPanelAuthed(req)) {
+          throw new Error("Bu operasyon pasife alındı; yeni kayıt yapılamaz.");
+        }
 
         // Barkod eşsizlik kontrolü (TC kimlik kuralı)
         const dup = db.count_items.find(
@@ -359,6 +402,7 @@ export async function POST(req: NextRequest) {
       const clientName = String(body.client_name ?? "").trim();
       const mode = (body.mode as OperationMode) || "blank";
       const notes = String(body.notes ?? "").trim() || null;
+      const locations = parseLocations(body.locations);
 
       if (!name) {
         return NextResponse.json({ error: "Operasyon adı zorunlu" }, { status: 400 });
@@ -382,6 +426,7 @@ export async function POST(req: NextRequest) {
           count_date: now.slice(0, 10),
           client_id: null,
           notes,
+          locations,
           created_at: now,
         };
         db.operations.unshift(op);
@@ -417,9 +462,38 @@ export async function POST(req: NextRequest) {
     if (action === "update_operation_status") {
       const opId = String(body.operation_id ?? "");
       const status = body.status as OperationStatus;
+      if (!["draft", "active", "closed"].includes(status)) {
+        return NextResponse.json({ error: "Geçersiz durum" }, { status: 400 });
+      }
       await mutateDB((db) => {
         const op = db.operations.find((o) => o.id === opId);
         if (op) op.status = status;
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "update_operation_locations") {
+      const opId = String(body.operation_id ?? "");
+      const locations = parseLocations(body.locations);
+      await mutateDB((db) => {
+        const op = db.operations.find((o) => o.id === opId);
+        if (!op) throw new Error("Operasyon bulunamadı");
+        op.locations = locations;
+      });
+      return NextResponse.json({ ok: true, locations });
+    }
+
+    if (action === "delete_operation") {
+      // Operasyon ve ona ait tüm kayıtlar uygulamadan silinir.
+      // Google Drive'daki klasör (fotoğraflar + Excel) arşiv olarak yerinde bırakılır.
+      const opId = String(body.operation_id ?? "");
+      await mutateDB((db) => {
+        if (!db.operations.some((o) => o.id === opId)) throw new Error("Operasyon bulunamadı");
+        db.operations = db.operations.filter((o) => o.id !== opId);
+        db.operation_links = db.operation_links.filter((l) => l.operation_id !== opId);
+        db.operation_members = db.operation_members.filter((m) => m.operation_id !== opId);
+        db.count_items = db.count_items.filter((i) => i.operation_id !== opId);
+        db.expected_items = db.expected_items.filter((e) => e.operation_id !== opId);
       });
       return NextResponse.json({ ok: true });
     }

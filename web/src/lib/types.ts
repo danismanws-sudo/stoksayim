@@ -12,7 +12,7 @@ export const CONDITION_LABEL: Record<ItemCondition, string> = {
 export const STATUS_LABEL: Record<OperationStatus, string> = {
   draft: "Taslak",
   active: "Aktif",
-  closed: "Kapalı",
+  closed: "Pasif",
 };
 
 export const MODE_LABEL: Record<OperationMode, string> = {
@@ -42,6 +42,8 @@ export interface Operation {
   count_date: string;
   client_id: string | null;
   notes: string | null;
+  /** Yöneticinin operasyon açarken tanımladığı odalar / bölgeler (saha listeden seçer) */
+  locations?: string[];
   created_at: string;
   clients?: { name: string } | null;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { History, MapPin } from "lucide-react";
+import { Building2, History, MapPin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Sheet } from "@/components/ui";
 
@@ -40,7 +40,9 @@ export function LocationSheet({
   onSave: (v: string) => void;
 }) {
   const [value, setValue] = useState(current ?? "");
-  const [suggestions, setSuggestions] = useState<{ location: string; item_count: number }[]>([]);
+  const [suggestions, setSuggestions] = useState<
+    { location: string; item_count: number; predefined?: boolean }[]
+  >([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const mandatory = !current;
 
@@ -64,6 +66,24 @@ export function LocationSheet({
       s.location.toLocaleLowerCase("tr").includes(value.trim().toLocaleLowerCase("tr")),
   );
 
+  const predefinedList = filtered.filter((s) => s.predefined);
+  const usedList = filtered.filter((s) => !s.predefined);
+
+  const renderList = (list: typeof filtered) => (
+    <div className="flex flex-col gap-1.5">
+      {list.map((s) => (
+        <button
+          key={s.location}
+          onClick={() => save(s.location)}
+          className="flex items-center justify-between rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-left text-sm font-semibold hover:bg-white/5"
+        >
+          <span className="truncate">{s.location}</span>
+          <span className="ml-3 shrink-0 text-xs font-normal text-ink-mute">{s.item_count} ürün</span>
+        </button>
+      ))}
+    </div>
+  );
+
   const save = (v: string) => {
     if (!v.trim()) return;
     onSave(v);
@@ -83,7 +103,7 @@ export function LocationSheet({
       }
     >
       <p className="mb-4 text-sm text-ink-dim">
-        Sayım yaptığınız oda / bölgeyi girin (örn. <b>3340</b> veya <b>Kaplan Toplantı Odası</b>). Okuttuğunuz her ürün bu lokasyona kilitlenir; oda değiştirdiğinizde mutlaka güncelleyin.
+        Sayım yaptığınız oda / bölgeyi aşağıdaki listeden seçin; listede yoksa yazarak ekleyin (örn. <b>3340</b> veya <b>Kaplan Toplantı Odası</b>). Okuttuğunuz her ürün bu lokasyona kilitlenir; oda değiştirdiğinizde mutlaka güncelleyin.
       </p>
       {current && (
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-scan-soft px-3 py-2.5 text-sm">
@@ -106,23 +126,20 @@ export function LocationSheet({
           />
         </Field>
       </form>
-      {filtered.length > 0 && (
+      {predefinedList.length > 0 && (
         <div className="mt-5">
           <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-mute">
-            <History className="size-3.5" /> Bu operasyonda kullanılan lokasyonlar
+            <Building2 className="size-3.5" /> Yöneticinin tanımladığı lokasyonlar
           </h4>
-          <div className="flex flex-col gap-1.5">
-            {filtered.slice(0, 12).map((s) => (
-              <button
-                key={s.location}
-                onClick={() => save(s.location)}
-                className="flex items-center justify-between rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-left text-sm font-semibold hover:bg-white/5"
-              >
-                <span className="truncate">{s.location}</span>
-                <span className="ml-3 shrink-0 text-xs font-normal text-ink-mute">{s.item_count} ürün</span>
-              </button>
-            ))}
-          </div>
+          {renderList(predefinedList)}
+        </div>
+      )}
+      {usedList.length > 0 && (
+        <div className="mt-5">
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-mute">
+            <History className="size-3.5" /> Sahada eklenen lokasyonlar
+          </h4>
+          {renderList(usedList.slice(0, 12))}
         </div>
       )}
     </Sheet>

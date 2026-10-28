@@ -299,6 +299,21 @@ export function FieldClient({ operationId }: { operationId: string }) {
     );
   }
 
+  if (op.status !== "active") {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
+        <Logo />
+        <Card className="p-6">
+          <h1 className="text-xl font-bold">Bu operasyon şu an aktif değil</h1>
+          <p className="mt-2 text-sm text-ink-dim">
+            Yönetici bu sayım operasyonunu pasife aldı. Yeni kayıt yapılamaz; lütfen yöneticinizle
+            iletişime geçin.
+          </p>
+        </Card>
+      </main>
+    );
+  }
+
   if (finished) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-5 p-6 text-center">

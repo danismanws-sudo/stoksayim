@@ -19,6 +19,9 @@ import {
   Search,
   Send,
   Smartphone,
+  LogOut,
+  PauseCircle,
+  PlayCircle,
   Trash2,
   Upload,
   Users,
@@ -92,6 +95,10 @@ export function PanelClient() {
   const [opClient, setOpClient] = useState("");
   const [opMode, setOpMode] = useState<OperationMode>("compare");
   const [opNotes, setOpNotes] = useState("");
+  const [opLocations, setOpLocations] = useState("");
+  const [locEditOpen, setLocEditOpen] = useState(false);
+  const [locEditValue, setLocEditValue] = useState("");
+  const [opBusy, setOpBusy] = useState(false);
 
   // PC'den ürün ekleme / düzenleme
   const [pcEditOpen, setPcEditOpen] = useState(false);
@@ -242,6 +249,7 @@ export function PanelClient() {
           client_name: opClient.trim(),
           mode: opMode,
           notes: opNotes.trim(),
+          locations: opLocations,
         }),
       });
       const data = await res.json();
@@ -251,10 +259,93 @@ export function PanelClient() {
       setOpName("");
       setOpClient("");
       setOpNotes("");
+      setOpLocations("");
       await loadAll(data.op.id);
     } catch (err) {
       toast.error(humanError(err));
     }
+  };
+
+  const postAction = async (payload: Record<string, unknown>) => {
+    const res = await fetch("/api/drive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(data.error || "İşlem başarısız");
+    return data;
+  };
+
+  const toggleOperationStatus = async () => {
+    if (!currentOp) return;
+    const toPassive = currentOp.status === "active";
+    const msg = toPassive
+      ? `"${currentOp.name}" pasife alınsın mı?\n\nSaha personeli bu operasyona QR/link ile giremez ve yeni kayıt yapamaz. Kayıtlar silinmez, istediğiniz zaman tekrar aktifleştirebilirsiniz.`
+      : `"${currentOp.name}" tekrar aktifleştirilsin mi?`;
+    if (!confirm(msg)) return;
+    setOpBusy(true);
+    try {
+      await postAction({
+        action: "update_operation_status",
+        operation_id: currentOp.id,
+        status: toPassive ? "closed" : "active",
+      });
+      toast.success(toPassive ? "Operasyon pasife alındı" : "Operasyon aktifleştirildi");
+      await loadAll(currentOp.id);
+    } catch (err) {
+      toast.error(humanError(err));
+    } finally {
+      setOpBusy(false);
+    }
+  };
+
+  const deleteOperation = async () => {
+    if (!currentOp) return;
+    const typed = prompt(
+      `DİKKAT: "${currentOp.name}" operasyonu ve uygulamadaki tüm sayım kayıtları, QR bağlantıları ve beklenen listesi kalıcı olarak silinecek.\n(Google Drive'daki fotoğraf ve Excel klasörü arşiv olarak kalır.)\n\nOnaylamak için operasyon kodunu yazın: ${currentOp.code}`,
+    );
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== currentOp.code.toUpperCase()) {
+      toast.error("Operasyon kodu eşleşmedi, silinmedi.");
+      return;
+    }
+    setOpBusy(true);
+    try {
+      await postAction({ action: "delete_operation", operation_id: currentOp.id });
+      toast.success(`${currentOp.code} silindi`);
+      const next = operations.find((o) => o.id !== currentOp.id);
+      setSelectedOpId(next?.id ?? "");
+      await loadAll(next?.id ?? "");
+    } catch (err) {
+      toast.error(humanError(err));
+    } finally {
+      setOpBusy(false);
+    }
+  };
+
+  const saveOperationLocations = async () => {
+    if (!currentOp) return;
+    setOpBusy(true);
+    try {
+      await postAction({
+        action: "update_operation_locations",
+        operation_id: currentOp.id,
+        locations: locEditValue,
+      });
+      toast.success("Lokasyonlar kaydedildi");
+      setLocEditOpen(false);
+      await loadAll(currentOp.id);
+    } catch (err) {
+      toast.error(humanError(err));
+    } finally {
+      setOpBusy(false);
+    }
+  };
+
+  const logout = async () => {
+    await fetch("/api/panel/login", { method: "DELETE" });
+    window.location.reload();
   };
 
   const handlePcSaveItem = async ({ draft, photo, keepPhotoPath, updateId }: ItemSubmit) => {
@@ -351,14 +442,7 @@ export function PanelClient() {
               {APP_VERSION}
             </span>
             <span className="hidden h-6 w-px bg-line sm:block" />
-            <div className="hidden sm:block">
-              <div className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
-                Yönetici & Patron Dashboard
-              </div>
-              <div className="text-sm font-bold text-ink">
-                Operasyon, Canlı Excel & QR Kontrol Merkezi
-              </div>
-            </div>
+            <div className="hidden text-sm font-bold text-ink sm:block">Operasyon Kontrol Merkezi</div>
           </div>
 
           {/* Operasyon Seçici + Yeni Operasyon */}
@@ -386,6 +470,10 @@ export function PanelClient() {
                 </Button>
               </Link>
             )}
+
+            <Button size="md" variant="ghost" onClick={() => void logout()} title="Çıkış yap">
+              <LogOut className="size-4" /> Çıkış
+            </Button>
           </div>
         </div>
       </header>
@@ -396,8 +484,13 @@ export function PanelClient() {
             {/* ---------- Operasyon Özet & KPI Kartları ---------- */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <Card className="p-4">
-                <div className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
-                  Aktif Operasyon
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
+                    Seçili Operasyon
+                  </span>
+                  <Badge tone={currentOp.status === "active" ? "ok" : "warn"}>
+                    {STATUS_LABEL[currentOp.status]}
+                  </Badge>
                 </div>
                 <div className="mt-1 font-mono text-lg font-extrabold text-[#9fb1ff]">
                   {currentOp.code}
@@ -405,6 +498,34 @@ export function PanelClient() {
                 <div className="truncate text-sm font-semibold">{currentOp.name}</div>
                 <div className="mt-2 flex items-center gap-1.5">
                   <Badge tone="brand">{MODE_LABEL[currentOp.mode]}</Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={opBusy}
+                    onClick={() => {
+                      setLocEditValue((currentOp.locations ?? []).join("\n"));
+                      setLocEditOpen(true);
+                    }}
+                    title="Saha personelinin seçeceği odaları düzenle"
+                  >
+                    <MapPin className="size-3.5" /> Lokasyonlar ({currentOp.locations?.length ?? 0})
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={opBusy} onClick={() => void toggleOperationStatus()}>
+                    {currentOp.status === "active" ? (
+                      <>
+                        <PauseCircle className="size-3.5" /> Pasife Al
+                      </>
+                    ) : (
+                      <>
+                        <PlayCircle className="size-3.5" /> Aktifleştir
+                      </>
+                    )}
+                  </Button>
+                  <Button size="sm" variant="danger" disabled={opBusy} onClick={() => void deleteOperation()}>
+                    <Trash2 className="size-3.5" /> Operasyonu Sil
+                  </Button>
                 </div>
               </Card>
 
@@ -1192,6 +1313,18 @@ export function PanelClient() {
               <option value="compare">Eski Liste Karşılaştırmalı (Fire Bulma Modu)</option>
             </select>
           </Field>
+          <Field
+            label="Lokasyonlar (Oda / Bölge)"
+            hint="Her satıra bir oda yazın. Saha personeli listeden seçer; listede olmayan odayı kendisi de ekleyebilir. Boş bırakılabilir."
+          >
+            <textarea
+              value={opLocations}
+              onChange={(e) => setOpLocations(e.target.value)}
+              rows={4}
+              placeholder={"3340\nKaplan Toplantı Odası\nMutfak"}
+              className="w-full rounded-xl border border-line-strong bg-surface-2 px-4 py-3 text-sm text-ink outline-none focus:border-brand"
+            />
+          </Field>
           <Field label="Notlar">
             <Input
               value={opNotes}
@@ -1200,6 +1333,31 @@ export function PanelClient() {
             />
           </Field>
         </form>
+      </Sheet>
+
+      {/* ---------- Modal: Operasyon Lokasyonları ---------- */}
+      <Sheet
+        open={locEditOpen}
+        onClose={() => setLocEditOpen(false)}
+        title={`Lokasyonlar — ${currentOp?.code ?? ""}`}
+        footer={
+          <Button size="xl" className="w-full" loading={opBusy} onClick={() => void saveOperationLocations()}>
+            Lokasyonları Kaydet
+          </Button>
+        }
+      >
+        <Field
+          label="Oda / Bölge Listesi"
+          hint="Her satıra bir oda yazın. Saha personeli sayıma başlarken bu listeden seçer; listede olmayan odayı kendisi de ekleyebilir."
+        >
+          <textarea
+            value={locEditValue}
+            onChange={(e) => setLocEditValue(e.target.value)}
+            rows={10}
+            placeholder={"3340\nKaplan Toplantı Odası\nMutfak"}
+            className="w-full rounded-xl border border-line-strong bg-surface-2 px-4 py-3 text-sm text-ink outline-none focus:border-brand"
+          />
+        </Field>
       </Sheet>
 
       {/* ---------- Modal: PC'den Ürün Ekle / Düzenle ---------- */}
