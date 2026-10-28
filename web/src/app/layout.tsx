@@ -16,7 +16,6 @@ export const metadata: Metadata = {
   description: "Kamera ile barkod okutarak hızlı ve fotoğraflı duran varlık sayımı.",
   applicationName: "Detay Stok Sayım",
   appleWebApp: { capable: true, title: "Detay Sayım", statusBarStyle: "black-translucent" },
-  icons: { icon: "/icon.png", apple: "/icon.png" },
   robots: { index: false, follow: false },
 };
 
