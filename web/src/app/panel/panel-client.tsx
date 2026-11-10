@@ -575,7 +575,13 @@ export function PanelClient() {
                   </span>
                   <HardDrive className="size-4 text-ok" />
                 </div>
-                <div className="mt-1 text-sm font-bold text-ok">Canlı Senkron Aktif</div>
+                <div className="mt-1 flex items-center gap-2 text-sm font-bold text-ok">
+                  <span className="relative flex size-2.5">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-75" />
+                    <span className="relative inline-flex size-2.5 rounded-full bg-ok" />
+                  </span>
+                  Canlı Senkron Aktif
+                </div>
                 <div className="mt-1 truncate text-xs text-ink-mute">
                   Klasör: Operasyonlar/{currentOp.code}
                 </div>
