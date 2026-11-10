@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronRight,
   CloudOff,
-  HardDrive,
   Image as ImageIcon,
   List,
   MapPin,
@@ -355,11 +354,13 @@ export function FieldClient({ operationId }: { operationId: string }) {
                 <RefreshCw className="size-3.5 animate-spin" /> {pending}
               </Badge>
             </button>
-          ) : (
-            <Badge tone="ok">
-              <HardDrive className="size-3.5" /> Drive Senkron
-            </Badge>
-          )}
+          ) : null}
+          <button
+            onClick={() => setFinishOpen(true)}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-scan/40 bg-scan-soft px-3 text-sm font-bold text-scan hover:bg-scan/20"
+          >
+            <LogOut className="size-4" /> Çıkış
+          </button>
         </div>
 
         {/* Zorunlu Lokasyon Kilidi */}
@@ -543,11 +544,12 @@ export function FieldClient({ operationId }: { operationId: string }) {
       <Sheet
         open={finishOpen}
         onClose={() => !finishing && setFinishOpen(false)}
-        title="Sayımı bitirmek istediğinize emin misiniz?"
+        title="Sayımınız bitecek. Çıkmak istediğinize emin misiniz?"
       >
         <div className="flex flex-col gap-3 pb-2">
           <p className="text-sm text-ink-dim">
-            Toplam <b className="text-ink">{totalCount}</b> ürün saydınız. Çıkış yaptıktan sonra bu
+            Toplam <b className="text-ink">{totalCount}</b> ürün saydınız; kayıtlarınız otomatik
+            kaydedilir. Çıkış yaptıktan sonra bu
             operasyona tekrar katılmak için QR kodu veya linki yeniden açmanız gerekir.
           </p>
           {pending > 0 && (
@@ -560,7 +562,7 @@ export function FieldClient({ operationId }: { operationId: string }) {
               Vazgeç
             </Button>
             <Button variant="danger" loading={finishing} onClick={() => void finishCount()}>
-              Evet, Bitir
+              <LogOut className="size-4" /> Çıkış Yap
             </Button>
           </div>
         </div>
