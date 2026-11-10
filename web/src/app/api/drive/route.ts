@@ -13,6 +13,7 @@ import {
   isGoogleDriveConnected,
   uploadExpectedListToGoogleDrive,
 } from "@/lib/google-drive-api";
+import { parseExpectedExcel } from "@/lib/expected-excel";
 import { PANEL_COOKIE, verifyPanelSession } from "@/lib/panel-auth";
 import { TEKNIK_COOKIE, verifyTeknikSession } from "@/lib/teknik-auth";
 import type { ExpectedItem, ItemCondition, OperationMode, OperationStatus } from "@/lib/types";
@@ -528,6 +529,20 @@ export async function POST(req: NextRequest) {
         if (l) l.revoked_at = new Date().toISOString();
       });
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "parse_expected_excel") {
+      const raw = String(body.file_base64 ?? "").replace(/^data:[^;]*;base64,/, "");
+      if (!raw) return NextResponse.json({ error: "Dosya seçilmedi" }, { status: 400 });
+      try {
+        const rows = await parseExpectedExcel(Buffer.from(raw, "base64"));
+        if (rows.length === 0) {
+          return NextResponse.json({ error: "Excel dosyasında ürün satırı bulunamadı." }, { status: 400 });
+        }
+        return NextResponse.json({ rows });
+      } catch (e) {
+        return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+      }
     }
 
     if (action === "import_expected") {

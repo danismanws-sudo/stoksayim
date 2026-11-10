@@ -112,7 +112,9 @@ export function PanelClient() {
 
   // Beklenen liste içe aktarma
   const [importOpen, setImportOpen] = useState(false);
-  const [importText, setImportText] = useState("");
+  const [importRows, setImportRows] = useState<Partial<ExpectedItem>[]>([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
 
   // Kategori / Çeşit yönetimi
   const [newCatName, setNewCatName] = useState("");
@@ -393,38 +395,50 @@ export function PanelClient() {
     await loadAll(selectedOpId);
   };
 
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImportBusy(true);
+    setImportRows([]);
+    setImportFileName(file.name);
+    try {
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result ?? ""));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const data = (await postAction({
+        action: "parse_expected_excel",
+        file_base64: fileBase64,
+      })) as { rows?: Partial<ExpectedItem>[] };
+      setImportRows(data.rows ?? []);
+    } catch (err) {
+      setImportFileName("");
+      toast.error(humanError(err));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const handleImportExpected = async () => {
-    const lines = importText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-    if (lines.length === 0) return toast.error("En az 1 satır giriniz");
-
-    const rows = lines.map((line) => {
-      const parts = line.split(/\t|;|,/).map((p) => p.trim());
-      return {
-        barcode: parts[0] ?? "",
-        category: parts[1] ?? "Mobilya",
-        description: parts[2] ?? "Ürün",
-        location: parts[3] ?? "Genel Ofis",
-        assignee: parts[4] ?? "",
-      };
-    });
-
-    const res = await fetch("/api/drive", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    if (importRows.length === 0) return toast.error("Önce bir Excel dosyası seçin");
+    setImportBusy(true);
+    try {
+      const data = (await postAction({
         action: "import_expected",
         operation_id: selectedOpId,
-        rows,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) return toast.error(data.error);
-    toast.success(`${data.added} beklenen ürün yüklendi, Fire karşılaştırması güncellendi!`);
-    setImportOpen(false);
-    await loadAll(selectedOpId);
+        rows: importRows,
+      })) as { added?: number };
+      toast.success(`${data.added} beklenen ürün yüklendi, Fire karşılaştırması güncellendi!`);
+      setImportOpen(false);
+      setImportRows([]);
+      setImportFileName("");
+      await loadAll(selectedOpId);
+    } catch (err) {
+      toast.error(humanError(err));
+    } finally {
+      setImportBusy(false);
+    }
   };
 
   if (loading) return <FullScreenLoader label="Yönetici paneli hazırlanıyor…" />;
@@ -869,18 +883,12 @@ export function PanelClient() {
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        setImportText(
-                          expected
-                            .map(
-                              (e) =>
-                                `${e.barcode};${e.category ?? "Mobilya"};${e.description ?? "Ürün"};${e.location ?? "Genel Ofis"};${e.assignee ?? ""}`,
-                            )
-                            .join("\n"),
-                        );
+                        setImportRows([]);
+                        setImportFileName("");
                         setImportOpen(true);
                       }}
                     >
-                      <Upload className="size-4" /> Eski Liste Yükle / Düzenle (
+                      <Upload className="size-4" /> Önceki Sayımın Excel'ini Yükle (
                       {expected.length} kayıt)
                     </Button>
                   </div>
@@ -1392,22 +1400,62 @@ export function PanelClient() {
         onClose={() => setImportOpen(false)}
         title="Eski Envanter Listesi Yükle (Fire Karşılaştırması)"
         footer={
-          <Button size="xl" className="w-full" onClick={handleImportExpected}>
+          <Button
+            size="xl"
+            className="w-full"
+            loading={importBusy}
+            disabled={importRows.length === 0}
+            onClick={handleImportExpected}
+          >
             Listeyi Kaydet ve Fireleri Hesapla
           </Button>
         }
       >
         <div className="space-y-3">
-          <p className="text-xs text-ink-dim">
-            Her satıra <code>Barkod;Ürün Cinsi;Ürün Adı;Lokasyon;Zimmet</code> formatında yapıştırın (Excel&apos;den kopyalayıp doğrudan yapıştırabilirsiniz):
+          <p className="text-sm text-ink-dim">
+            Önceki sayımda bu uygulamadan indirdiğiniz Excel dosyasını (<code>.xlsx</code>) seçin.
+            Dosyadaki ürünler beklenen liste olur; bu sayımda bulunamayanlar <b>Fire</b> olarak
+            gösterilir.
           </p>
-          <textarea
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            rows={10}
-            className="w-full rounded-xl border border-line-strong bg-surface-2 p-3 font-mono text-xs text-ink outline-none focus:border-brand"
-            placeholder="869897310865;Teknolojik Alet;Bilgisayar;3340;Ahmet YILMAZ"
-          />
+          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface-2 px-4 py-8 text-center hover:border-brand">
+            <Upload className="size-7 text-[#9fb1ff]" />
+            <span className="text-sm font-bold">
+              {importFileName || "Excel dosyası seçmek için tıklayın"}
+            </span>
+            <span className="text-xs text-ink-mute">
+              {importBusy && importRows.length === 0
+                ? "Dosya okunuyor…"
+                : importRows.length > 0
+                  ? "Farklı bir dosya seçmek için tıklayın"
+                  : "Sadece .xlsx"}
+            </span>
+            <input
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={(e) => {
+                void handleImportFile(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {importRows.length > 0 && (
+            <div className="rounded-xl border border-ok/40 bg-ok-soft/20 p-3 text-xs">
+              <div className="font-bold text-ok">{importRows.length} ürün bulundu</div>
+              <ul className="mt-1.5 space-y-0.5 text-ink-dim">
+                {importRows.slice(0, 5).map((r) => (
+                  <li key={r.barcode} className="truncate">
+                    <span className="font-mono">{r.barcode}</span> · {r.description ?? "-"}
+                    {r.location ? ` · ${r.location}` : ""}
+                  </li>
+                ))}
+                {importRows.length > 5 && <li>… ve {importRows.length - 5} ürün daha</li>}
+              </ul>
+              <p className="mt-2 text-ink-mute">
+                Kaydedince bu operasyonun mevcut beklenen listesi bu dosyayla değiştirilir.
+              </p>
+            </div>
+          )}
         </div>
       </Sheet>
 
