@@ -36,6 +36,7 @@ import type { OperationMemberRecord } from "@/lib/drive-store";
 import type {
   Category,
   CompareRow,
+  CompareStatus,
   CountItem,
   ExpectedItem,
   Operation,
@@ -43,7 +44,14 @@ import type {
   OperationMode,
   ProductType,
 } from "@/lib/types";
-import { CONDITION_LABEL, MODE_LABEL, STATUS_LABEL } from "@/lib/types";
+import {
+  COMPARE_COLUMNS,
+  COMPARE_STATUS_LABEL,
+  COMPARE_STATUS_ORDER,
+  CONDITION_LABEL,
+  MODE_LABEL,
+  STATUS_LABEL,
+} from "@/lib/types";
 import { cn, fmtDateTime, humanError } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/version";
 
@@ -70,6 +78,22 @@ function doPost(e) {
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
 }`;
 
+const COMPARE_TONE: Record<CompareStatus, "scan" | "warn" | "brand" | "ok"> = {
+  fire: "scan",
+  bekliyor: "warn",
+  yer_degisti: "brand",
+  fazla: "warn",
+  bulunan: "ok",
+};
+
+const COMPARE_TEXT: Record<CompareStatus, string> = {
+  fire: "text-scan",
+  bekliyor: "text-warn",
+  yer_degisti: "text-[#9fb1ff]",
+  fazla: "text-warn",
+  bulunan: "text-ok",
+};
+
 export function PanelClient() {
   const [loading, setLoading] = useState(true);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -87,7 +111,7 @@ export function PanelClient() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterLocation, setFilterLocation] = useState<string>("all");
   const [filterQuick, setFilterQuick] = useState<"all" | "with_photo" | "no_photo" | "damaged">("all");
-  const [compareFilter, setCompareFilter] = useState<"all" | "fire" | "bulunan" | "fazla">("all");
+  const [compareFilter, setCompareFilter] = useState<"all" | CompareStatus>("all");
 
   // Modallar
   const [newOpOpen, setNewOpOpen] = useState(false);
@@ -226,15 +250,21 @@ export function PanelClient() {
 
   const stats = useMemo(() => {
     const withPhoto = items.filter((i) => i.photo_path).length;
-    const fireCount = compareRows.filter((r) => r.status === "fire").length;
-    const bulunanCount = compareRows.filter((r) => r.status === "bulunan").length;
-    const fazlaCount = compareRows.filter((r) => r.status === "fazla").length;
+    const compareCounts = Object.fromEntries(
+      COMPARE_STATUS_ORDER.map((k) => [k, compareRows.filter((r) => r.status === k).length]),
+    ) as Record<CompareStatus, number>;
+    // Operasyon aktifken eksikler "Henüz Sayılmadı", pasife alınınca "Fire" olur
+    const missingStatus: CompareStatus = compareRows.some((r) => r.status === "bekliyor")
+      ? "bekliyor"
+      : "fire";
     return {
       totalItems: items.length,
       withPhoto,
-      fireCount,
-      bulunanCount,
-      fazlaCount,
+      compareCounts,
+      missingStatus,
+      missingCount: compareCounts[missingStatus],
+      foundCount: compareCounts.bulunan + compareCounts.yer_degisti,
+      expectedCount: compareRows.filter((r) => r.status !== "fazla").length,
     };
   }, [items, compareRows]);
 
@@ -569,16 +599,22 @@ export function PanelClient() {
                 <div className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
                   Fire / Karşılaştırma Özeti
                 </div>
-                <div className="mt-1 flex items-baseline gap-3">
-                  <span className="tabular text-2xl font-extrabold text-ok">
-                    {stats.bulunanCount} Bulunan
+                <div className="mt-1 flex flex-col">
+                  <span className="tabular text-xl font-extrabold text-ok">
+                    {stats.foundCount} {COMPARE_STATUS_LABEL.bulunan}
                   </span>
-                  <span className="tabular text-lg font-bold text-scan">
-                    {stats.fireCount} Fire
+                  <span
+                    className={cn(
+                      "tabular text-base font-bold",
+                      stats.missingStatus === "fire" ? "text-scan" : "text-warn",
+                    )}
+                  >
+                    {stats.missingCount} {COMPARE_STATUS_LABEL[stats.missingStatus]}
                   </span>
                 </div>
                 <div className="mt-1 text-xs text-ink-dim">
-                  {stats.fazlaCount} liste dışı fazla ürün
+                  {stats.compareCounts.yer_degisti} {COMPARE_STATUS_LABEL.yer_degisti} ·{" "}
+                  {stats.compareCounts.fazla} {COMPARE_STATUS_LABEL.fazla}
                 </div>
               </Card>
 
@@ -616,7 +652,7 @@ export function PanelClient() {
                     ["table", `Excel Sayım Tablosu (${items.length})`, FileSpreadsheet],
                     [
                       "compare",
-                      `Fire & Liste Karşılaştırma (${stats.fireCount} Fire)`,
+                      `Fire & Liste Karşılaştırma (${stats.missingCount} ${COMPARE_STATUS_LABEL[stats.missingStatus]})`,
                       Layers,
                     ],
                     ["qr", `Operasyona Özel QR & Link (${links.length})`, QrCode],
@@ -891,17 +927,53 @@ export function PanelClient() {
                       <Upload className="size-4" /> Önceki Sayımın Excel'ini Yükle (
                       {expected.length} kayıt)
                     </Button>
+                    {stats.missingCount > 0 && (
+                      <a href={`/api/drive/excel/${currentOp.id}?only=fire`}>
+                        <Button size="sm" variant="danger">
+                          <Download className="size-4" />{" "}
+                          {stats.missingStatus === "fire"
+                            ? "Fire Listesini İndir (.xlsx)"
+                            : "Henüz Sayılmayanları İndir (.xlsx)"}
+                        </Button>
+                      </a>
+                    )}
                   </div>
+                </Card>
+
+                {/* Özet satırı */}
+                <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-sm">
+                  <span>
+                    Beklenen <b className="tabular text-base">{stats.expectedCount}</b>
+                  </span>
+                  {COMPARE_STATUS_ORDER.filter(
+                    (k) => (k !== "fire" && k !== "bekliyor") || k === stats.missingStatus,
+                  ).map((k) => (
+                    <span key={k} className={COMPARE_TEXT[k]}>
+                      {COMPARE_STATUS_LABEL[k]}{" "}
+                      <b className="tabular text-base">{stats.compareCounts[k]}</b>
+                    </span>
+                  ))}
+                  {currentOp.status === "active" && stats.compareCounts.bekliyor > 0 && (
+                    <span className="text-xs text-ink-mute">
+                      Sayım sürüyor: operasyon pasife alındığında sayılmayanlar Fire olarak işaretlenir.
+                    </span>
+                  )}
                 </Card>
 
                 <div className="flex flex-wrap gap-2">
                   {(
                     [
                       ["all", `Tümü (${compareRows.length})`],
-                      ["fire", `FİRE / Eksik (${stats.fireCount})`],
-                      ["bulunan", `Bulunan (${stats.bulunanCount})`],
-                      ["fazla", `Liste Dışı Fazla (${stats.fazlaCount})`],
-                    ] as const
+                      ...COMPARE_STATUS_ORDER.filter(
+                        (k) => (k !== "fire" && k !== "bekliyor") || k === stats.missingStatus,
+                      ).map(
+                        (k) =>
+                          [k, `${COMPARE_STATUS_LABEL[k]} (${stats.compareCounts[k]})`] as [
+                            CompareStatus,
+                            string,
+                          ],
+                      ),
+                    ] as ["all" | CompareStatus, string][]
                   ).map(([k, label]) => (
                     <button
                       key={k}
@@ -925,31 +997,27 @@ export function PanelClient() {
                     <table className="w-full border-collapse text-left text-sm">
                       <thead>
                         <tr className="border-b border-line-strong bg-surface-2 text-xs font-bold uppercase tracking-wider text-ink-dim">
-                          <th className="px-4 py-3">Durum</th>
-                          <th className="px-4 py-3">Barkodu</th>
-                          <th className="px-4 py-3">Beklenen Ürün (Eski Liste)</th>
-                          <th className="px-4 py-3">Sayılan Ürün (Saha)</th>
-                          <th className="px-4 py-3">Beklenen Lokasyon</th>
-                          <th className="px-4 py-3">Sayılan Lokasyon</th>
+                          {COMPARE_COLUMNS.map((c) => (
+                            <th key={c} className="px-4 py-3">
+                              {c}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line">
                         {filteredCompare.map((r) => (
                           <tr key={r.barcode} className="hover:bg-white/[0.02]">
                             <td className="px-4 py-3">
-                              {r.status === "bulunan" && (
-                                <Badge tone="ok">
-                                  <CheckCircle2 className="size-3.5" /> BULUNDU
-                                </Badge>
-                              )}
-                              {r.status === "fire" && (
-                                <Badge tone="scan">
-                                  <AlertTriangle className="size-3.5" /> FİRE (BULUNAMADI)
-                                </Badge>
-                              )}
-                              {r.status === "fazla" && (
-                                <Badge tone="warn">FAZLA (LİSTEDE YOK)</Badge>
-                              )}
+                              <Badge tone={COMPARE_TONE[r.status]}>
+                                {r.status === "bulunan" ? (
+                                  <CheckCircle2 className="size-3.5" />
+                                ) : r.status === "yer_degisti" ? (
+                                  <MapPin className="size-3.5" />
+                                ) : (
+                                  <AlertTriangle className="size-3.5" />
+                                )}
+                                {COMPARE_STATUS_LABEL[r.status]}
+                              </Badge>
                             </td>
                             <td className="px-4 py-3 font-mono font-bold">
                               {r.barcode}
@@ -963,8 +1031,25 @@ export function PanelClient() {
                             <td className="px-4 py-3 text-ink-dim">
                               {r.expected_location ?? "-"}
                             </td>
-                            <td className="px-4 py-3 text-ink-dim">
+                            <td
+                              className={cn(
+                                "px-4 py-3",
+                                r.status === "yer_degisti" ? "font-bold text-[#9fb1ff]" : "text-ink-dim",
+                              )}
+                            >
                               {r.counted_location ?? "-"}
+                            </td>
+                            <td className="px-4 py-3 text-ink-dim">
+                              {r.expected_condition ?? "-"}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-4 py-3",
+                                r.condition_changed ? "font-bold text-warn" : "text-ink-dim",
+                              )}
+                            >
+                              {r.counted_condition ?? "-"}
+                              {r.condition_changed && " (değişti)"}
                             </td>
                           </tr>
                         ))}

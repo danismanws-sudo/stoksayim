@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildOperationExcelBuffer, readDB, writeOperationExcelFile } from "@/lib/drive-store";
+import { buildMissingExcelBuffer, buildOperationExcelBuffer, readDB, writeOperationExcelFile } from "@/lib/drive-store";
 import { PANEL_COOKIE, verifyPanelSession } from "@/lib/panel-auth";
 import { safePathPart } from "@/lib/utils";
 
@@ -27,6 +27,17 @@ export async function GET(
         ? "http"
         : "https");
     const baseUrl = `${proto}://${host}`;
+
+    if (new URL(req.url).searchParams.get("only") === "fire") {
+      const fireBuf = await buildMissingExcelBuffer(db, opId);
+      return new NextResponse(new Uint8Array(fireBuf), {
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${safePathPart(op.code)}_Fire_Listesi.xlsx"`,
+        },
+      });
+    }
 
     await writeOperationExcelFile(db, opId, baseUrl);
     const buf = await buildOperationExcelBuffer(db, opId, baseUrl);

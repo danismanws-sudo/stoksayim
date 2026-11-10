@@ -27,7 +27,7 @@ import type {
   ProductType,
   Profile,
 } from "./types";
-import { CONDITION_LABEL } from "./types";
+import { COMPARE_COLUMNS, COMPARE_STATUS_LABEL, COMPARE_STATUS_ORDER, CONDITION_LABEL } from "./types";
 import { safePathPart } from "./utils";
 
 /**
@@ -672,14 +672,12 @@ export async function buildOperationExcelBuffer(
   if (op.mode === "compare") {
     const compareRows = computeCompareRows(db, operationId);
     const wsComp = wb.addWorksheet("Fire ve Karşılaştırma");
-    wsComp.columns = [
-      { header: "Durum", key: "status", width: 16 },
-      { header: "Barkodu", key: "barcode", width: 20 },
-      { header: "Beklenen Ürün", key: "exp_desc", width: 24 },
-      { header: "Sayılan Ürün", key: "cnt_desc", width: 24 },
-      { header: "Beklenen Lokasyon", key: "exp_loc", width: 20 },
-      { header: "Sayılan Lokasyon", key: "cnt_loc", width: 20 },
-    ];
+    const compKeys = ["status", "barcode", "exp_desc", "cnt_desc", "exp_loc", "cnt_loc", "exp_cond", "cnt_cond"];
+    wsComp.columns = COMPARE_COLUMNS.map((header, i) => ({
+      header,
+      key: compKeys[i],
+      width: i === 0 ? 20 : i === 2 || i === 3 ? 26 : 22,
+    }));
     const h2 = wsComp.getRow(1);
     h2.font = { bold: true, color: { argb: "FFFFFFFF" } };
     h2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD10000" } };
@@ -687,12 +685,14 @@ export async function buildOperationExcelBuffer(
 
     compareRows.forEach((r) => {
       wsComp.addRow({
-        status: r.status === "bulunan" ? "BULUNDU" : r.status === "fire" ? "FİRE (EKSİK)" : "FAZLA (LİSTEDE YOK)",
+        status: COMPARE_STATUS_LABEL[r.status],
         barcode: r.barcode,
         exp_desc: r.expected_description ?? "-",
         cnt_desc: r.counted_description ?? "-",
         exp_loc: r.expected_location ?? "-",
         cnt_loc: r.counted_location ?? "-",
+        exp_cond: r.expected_condition ?? "-",
+        cnt_cond: `${r.counted_condition ?? "-"}${r.condition_changed ? " (değişti)" : ""}`,
       });
     });
   }
@@ -799,9 +799,65 @@ export async function pushToGoogleDriveWebhook(
   }
 }
 
+/**
+ * Sadece eksik ürünleri (Fire / Henüz Sayılmadı) eski listedeki tüm bilgileriyle içeren Excel.
+ */
+export async function buildMissingExcelBuffer(
+  db: DatabaseState,
+  operationId: string,
+): Promise<Buffer> {
+  const missing = new Map(
+    computeCompareRows(db, operationId)
+      .filter((r) => r.status === "fire" || r.status === "bekliyor")
+      .map((r) => [r.barcode, r.status]),
+  );
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Detay Stok Sayım";
+  const ws = wb.addWorksheet("Fire Listesi");
+  ws.columns = [
+    { header: "Durum", key: "status", width: 20 },
+    { header: "Barkodu", key: "barcode", width: 20 },
+    { header: "Ürün Cinsi", key: "category", width: 18 },
+    { header: "Ürün Adı", key: "description", width: 26 },
+    { header: "Modeli", key: "model", width: 16 },
+    { header: "Rengi", key: "color", width: 14 },
+    { header: "Ölçüleri", key: "dimensions", width: 16 },
+    { header: "Miktar", key: "quantity", width: 10 },
+    { header: "Önceki Durum", key: "condition", width: 20 },
+    { header: "Zimmet Durumu", key: "assignee", width: 22 },
+    { header: "Beklenen Lokasyon", key: "location", width: 22 },
+  ];
+  const h = ws.getRow(1);
+  h.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  h.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD10000" } };
+  h.height = 22;
+  for (const e of db.expected_items) {
+    const status = e.operation_id === operationId ? missing.get(e.barcode) : undefined;
+    if (!status) continue;
+    ws.addRow({
+      status: COMPARE_STATUS_LABEL[status],
+      barcode: e.barcode,
+      category: e.category ?? "-",
+      description: e.description ?? "-",
+      model: e.model ?? "-",
+      color: e.color ?? "-",
+      dimensions: e.dimensions ?? "-",
+      quantity: e.quantity ?? 1,
+      condition: e.condition ?? "-",
+      assignee: e.assignee ?? "-",
+      location: e.location ?? "-",
+    });
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
 export function computeCompareRows(db: DatabaseState, operationId: string): CompareRow[] {
   const expected = db.expected_items.filter((e) => e.operation_id === operationId);
   const counted = db.count_items.filter((c) => c.operation_id === operationId);
+
+  // Sayım sürerken okutulmayanlar "henüz sayılmadı"dır; operasyon pasife alınınca "fire" olur
+  const active = db.operations.find((o) => o.id === operationId)?.status === "active";
+  const norm = (v: string | null | undefined) => (v ?? "").trim().toLocaleLowerCase("tr");
 
   const expMap = new Map(expected.map((e) => [e.barcode, e]));
   const cntMap = new Map(counted.map((c) => [c.barcode, c]));
@@ -811,7 +867,10 @@ export function computeCompareRows(db: DatabaseState, operationId: string): Comp
   for (const barcode of barcodes) {
     const e = expMap.get(barcode);
     const c = cntMap.get(barcode);
-    const status: CompareRow["status"] = e && c ? "bulunan" : e && !c ? "fire" : "fazla";
+    const moved = Boolean(e && c && norm(e.location) && norm(e.location) !== norm(c.location));
+    const status: CompareRow["status"] =
+      e && c ? (moved ? "yer_degisti" : "bulunan") : e ? (active ? "bekliyor" : "fire") : "fazla";
+    const countedCondition = c?.condition ? CONDITION_LABEL[c.condition] : null;
     rows.push({
       operation_id: operationId,
       barcode,
@@ -820,13 +879,21 @@ export function computeCompareRows(db: DatabaseState, operationId: string): Comp
       expected_location: e?.location ?? null,
       counted_description: c?.description ?? null,
       counted_location: c?.location ?? null,
+      expected_condition: e?.condition ?? null,
+      counted_condition: countedCondition,
+      // Eski listede "Sağlam - not" gibi yazılmış olabilir; baştaki durum kelimesi karşılaştırılır
+      condition_changed: Boolean(
+        e?.condition && countedCondition && !norm(e.condition).startsWith(norm(countedCondition)),
+      ),
       count_item_id: c?.id ?? null,
       counted_at: c?.created_at ?? null,
     });
   }
   return rows.sort((a, b) => {
-    const order = { fire: 0, fazla: 1, bulunan: 2 };
-    return order[a.status] - order[b.status] || a.barcode.localeCompare(b.barcode);
+    return (
+      COMPARE_STATUS_ORDER.indexOf(a.status) - COMPARE_STATUS_ORDER.indexOf(b.status) ||
+      a.barcode.localeCompare(b.barcode)
+    );
   });
 }
 
