@@ -15,7 +15,12 @@ export type QueueState = "pending" | "conflict" | "error";
 export interface QueuedItem {
   client_uuid: string;
   draft: ItemDraft;
-  photo: Blob | null;
+  /**
+   * Fotoğraf base64 (data URL) metni olarak saklanır: iOS (Safari / WhatsApp içi tarayıcı)
+   * IndexedDB'ye Blob yazarken "Error preparing Blob/File data" hatası verir.
+   * Eski sürümden kalan kayıtlarda Blob olabilir.
+   */
+  photo: string | Blob | null;
   /** Mevcut bir kaydın güncellemesiyse kaydın id'si */
   update_id: string | null;
   /** Güncellemede eski fotoğraf korunacaksa */
@@ -52,15 +57,49 @@ export function onQueueChange(fn: Listener): () => void {
 }
 const emit = () => listeners.forEach((l) => l());
 
-export async function enqueue(item: Omit<QueuedItem, "state" | "error" | "created_at">) {
-  await (await db()).put("queue", {
+export async function enqueue(
+  item: Omit<QueuedItem, "state" | "error" | "created_at" | "photo"> & { photo: Blob | null },
+) {
+  const queued: QueuedItem = {
     ...item,
+    photo: item.photo ? await blobToBase64(item.photo) : null,
     state: "pending",
     error: null,
     created_at: Date.now(),
-  });
+  };
+  try {
+    await (await db()).put("queue", queued);
+  } catch (e) {
+    // Cihaz kuyruğu kullanılamıyorsa (örn. gizli sekme) kaydı doğrudan gönder
+    const res = await sendItem(queued).catch(() => null);
+    if (!res) throw e;
+    if (!res.ok) {
+      const errData = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(errData.error ?? "Kayıt gönderilemedi");
+    }
+    emit();
+    return;
+  }
   emit();
   await flush();
+}
+
+async function sendItem(q: QueuedItem) {
+  const identity = getSavedIdentity();
+  return fetch("/api/drive", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "save_item",
+      draft: q.draft,
+      update_id: q.update_id,
+      keep_photo_path: q.keep_photo_path,
+      photo_base64:
+        typeof q.photo === "string" ? q.photo : q.photo ? await blobToBase64(q.photo) : null,
+      counted_by: identity.id,
+      counted_by_name: identity.name,
+    }),
+  });
 }
 
 export async function listQueue(operationId: string) {
@@ -116,24 +155,9 @@ export async function flush(): Promise<void> {
 
     if (all.length === 0) return;
 
-    const identity = getSavedIdentity();
-
     for (const q of all) {
       try {
-        const photoBase64 = q.photo ? await blobToBase64(q.photo) : null;
-        const res = await fetch("/api/drive", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "save_item",
-            draft: q.draft,
-            update_id: q.update_id,
-            keep_photo_path: q.keep_photo_path,
-            photo_base64: photoBase64,
-            counted_by: identity.id,
-            counted_by_name: identity.name,
-          }),
-        });
+        const res = await sendItem(q);
 
         if (!res.ok) {
           const errData = (await res.json().catch(() => ({}))) as {
