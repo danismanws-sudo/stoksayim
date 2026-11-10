@@ -87,14 +87,6 @@ const COMPARE_TONE: Record<CompareStatus, "scan" | "warn" | "brand" | "ok"> = {
   bulunan: "ok",
 };
 
-const COMPARE_TEXT: Record<CompareStatus, string> = {
-  fire: "text-scan",
-  bekliyor: "text-warn",
-  yer_degisti: "text-[#9fb1ff]",
-  fazla: "text-warn",
-  bulunan: "text-ok",
-};
-
 export function PanelClient() {
   const [loading, setLoading] = useState(true);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -925,7 +917,7 @@ export function PanelClient() {
                         setImportOpen(true);
                       }}
                     >
-                      <Upload className="size-4" /> Önceki Sayımın Excel'ini Yükle (
+                      <Upload className="size-4" /> Önceki Sayımın Excel&apos;ini Yükle (
                       {expected.length} kayıt)
                     </Button>
                     {currentOp.status === "active" ? (
@@ -954,27 +946,7 @@ export function PanelClient() {
                   </div>
                 </Card>
 
-                {/* Özet satırı */}
-                <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-sm">
-                  <span>
-                    Beklenen <b className="tabular text-base">{stats.expectedCount}</b>
-                  </span>
-                  {COMPARE_STATUS_ORDER.filter(
-                    (k) => (k !== "fire" && k !== "bekliyor") || k === stats.missingStatus,
-                  ).map((k) => (
-                    <span key={k} className={COMPARE_TEXT[k]}>
-                      {COMPARE_STATUS_LABEL[k]}{" "}
-                      <b className="tabular text-base">{stats.compareCounts[k]}</b>
-                    </span>
-                  ))}
-                  {currentOp.status === "active" && stats.compareCounts.bekliyor > 0 && (
-                    <span className="text-xs text-ink-mute">
-                      Sayım sürüyor: operasyon pasife alındığında sayılmayanlar Fire olarak işaretlenir.
-                    </span>
-                  )}
-                </Card>
-
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {(
                     [
                       ["all", `Tümü (${compareRows.length})`],
@@ -1004,6 +976,13 @@ export function PanelClient() {
                       {label}
                     </button>
                   ))}
+                  {currentOp.status === "active" && stats.compareCounts.bekliyor > 0 && (
+                    <div className="marquee h-10 min-w-40 flex-1 rounded-xl border border-warn/30 bg-warn-soft/30 text-sm font-semibold text-warn">
+                      <span className="marquee-text">
+                        Sayım sürüyor: operasyon pasife alındığında sayılmayanlar Fire olarak işaretlenir.
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <Card className="overflow-hidden">
