@@ -670,31 +670,7 @@ export async function buildOperationExcelBuffer(
 
   // 2) Eğer karşılaştırmalı (Fire) moddaysa Fire & Karşılaştırma sekmesi ekle
   if (op.mode === "compare") {
-    const compareRows = computeCompareRows(db, operationId);
-    const wsComp = wb.addWorksheet("Fire ve Karşılaştırma");
-    const compKeys = ["status", "barcode", "exp_desc", "cnt_desc", "exp_loc", "cnt_loc", "exp_cond", "cnt_cond"];
-    wsComp.columns = COMPARE_COLUMNS.map((header, i) => ({
-      header,
-      key: compKeys[i],
-      width: i === 0 ? 20 : i === 2 || i === 3 ? 26 : 22,
-    }));
-    const h2 = wsComp.getRow(1);
-    h2.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    h2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD10000" } };
-    h2.height = 22;
-
-    compareRows.forEach((r) => {
-      wsComp.addRow({
-        status: COMPARE_STATUS_LABEL[r.status],
-        barcode: r.barcode,
-        exp_desc: r.expected_description ?? "-",
-        cnt_desc: r.counted_description ?? "-",
-        exp_loc: r.expected_location ?? "-",
-        cnt_loc: r.counted_location ?? "-",
-        exp_cond: r.expected_condition ?? "-",
-        cnt_cond: `${r.counted_condition ?? "-"}${r.condition_changed ? " (değişti)" : ""}`,
-      });
-    });
+    addCompareSheet(wb, db, operationId);
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
@@ -799,55 +775,45 @@ export async function pushToGoogleDriveWebhook(
   }
 }
 
+/** "Fire ve Karşılaştırma" sayfası: paneldeki tabloyla aynı sütunlar, tüm durumlar */
+function addCompareSheet(wb: ExcelJS.Workbook, db: DatabaseState, operationId: string) {
+  const compareRows = computeCompareRows(db, operationId);
+  const wsComp = wb.addWorksheet("Fire ve Karşılaştırma");
+  const compKeys = ["status", "barcode", "exp_desc", "cnt_desc", "exp_loc", "cnt_loc", "exp_cond", "cnt_cond"];
+  wsComp.columns = COMPARE_COLUMNS.map((header, i) => ({
+    header,
+    key: compKeys[i],
+    width: i === 0 ? 20 : i === 2 || i === 3 ? 26 : 22,
+  }));
+  const h2 = wsComp.getRow(1);
+  h2.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  h2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD10000" } };
+  h2.height = 22;
+
+  compareRows.forEach((r) => {
+    wsComp.addRow({
+      status: COMPARE_STATUS_LABEL[r.status],
+      barcode: r.barcode,
+      exp_desc: r.expected_description ?? "-",
+      cnt_desc: r.counted_description ?? "-",
+      exp_loc: r.expected_location ?? "-",
+      cnt_loc: r.counted_location ?? "-",
+      exp_cond: r.expected_condition ?? "-",
+      cnt_cond: `${r.counted_condition ?? "-"}${r.condition_changed ? " (değişti)" : ""}`,
+    });
+  });
+}
+
 /**
- * Sadece eksik ürünleri (Fire / Henüz Sayılmadı) eski listedeki tüm bilgileriyle içeren Excel.
+ * Sadece Eski Liste & Fire Karşılaştırma tablosunu (tüm durumlarıyla) içeren Excel.
  */
-export async function buildMissingExcelBuffer(
+export async function buildCompareExcelBuffer(
   db: DatabaseState,
   operationId: string,
 ): Promise<Buffer> {
-  const missing = new Map(
-    computeCompareRows(db, operationId)
-      .filter((r) => r.status === "fire" || r.status === "bekliyor")
-      .map((r) => [r.barcode, r.status]),
-  );
   const wb = new ExcelJS.Workbook();
   wb.creator = "Detay Stok Sayım";
-  const ws = wb.addWorksheet("Fire Listesi");
-  ws.columns = [
-    { header: "Durum", key: "status", width: 20 },
-    { header: "Barkodu", key: "barcode", width: 20 },
-    { header: "Ürün Cinsi", key: "category", width: 18 },
-    { header: "Ürün Adı", key: "description", width: 26 },
-    { header: "Modeli", key: "model", width: 16 },
-    { header: "Rengi", key: "color", width: 14 },
-    { header: "Ölçüleri", key: "dimensions", width: 16 },
-    { header: "Miktar", key: "quantity", width: 10 },
-    { header: "Önceki Durum", key: "condition", width: 20 },
-    { header: "Zimmet Durumu", key: "assignee", width: 22 },
-    { header: "Beklenen Lokasyon", key: "location", width: 22 },
-  ];
-  const h = ws.getRow(1);
-  h.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  h.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD10000" } };
-  h.height = 22;
-  for (const e of db.expected_items) {
-    const status = e.operation_id === operationId ? missing.get(e.barcode) : undefined;
-    if (!status) continue;
-    ws.addRow({
-      status: COMPARE_STATUS_LABEL[status],
-      barcode: e.barcode,
-      category: e.category ?? "-",
-      description: e.description ?? "-",
-      model: e.model ?? "-",
-      color: e.color ?? "-",
-      dimensions: e.dimensions ?? "-",
-      quantity: e.quantity ?? 1,
-      condition: e.condition ?? "-",
-      assignee: e.assignee ?? "-",
-      location: e.location ?? "-",
-    });
-  }
+  addCompareSheet(wb, db, operationId);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

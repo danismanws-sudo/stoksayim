@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   HardDrive,
+  Info,
   Tags,
   Image as ImageIcon,
   Layers,
@@ -927,13 +928,26 @@ export function PanelClient() {
                       <Upload className="size-4" /> Önceki Sayımın Excel'ini Yükle (
                       {expected.length} kayıt)
                     </Button>
-                    {stats.missingCount > 0 && (
-                      <a href={`/api/drive/excel/${currentOp.id}?only=fire`}>
-                        <Button size="sm" variant="danger">
-                          <Download className="size-4" />{" "}
-                          {stats.missingStatus === "fire"
-                            ? "Fire Listesini İndir (.xlsx)"
-                            : "Henüz Sayılmayanları İndir (.xlsx)"}
+                    {currentOp.status === "active" ? (
+                      <span className="flex items-center gap-1.5">
+                        <Button size="sm" variant="outline" disabled>
+                          <Download className="size-4" /> Eski Liste & Fire Karşılaştırma Tablosunu İndir (.xlsx)
+                        </Button>
+                        <span className="group relative flex">
+                          <Info className="size-5 cursor-help text-ink-mute hover:text-ink" />
+                          <span className="pointer-events-none absolute right-0 top-full z-20 mt-2 w-56 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-xs text-ink opacity-0 shadow-xl transition group-hover:opacity-100">
+                            Sayım bitince buton aktif olur.
+                          </span>
+                        </span>
+                      </span>
+                    ) : (
+                      <a href={`/api/drive/excel/${currentOp.id}?only=compare`}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="hover:border-brand hover:bg-brand hover:text-white hover:shadow-lg hover:shadow-brand/30"
+                        >
+                          <Download className="size-4" /> Eski Liste & Fire Karşılaştırma Tablosunu İndir (.xlsx)
                         </Button>
                       </a>
                     )}

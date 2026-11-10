@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildMissingExcelBuffer, buildOperationExcelBuffer, readDB, writeOperationExcelFile } from "@/lib/drive-store";
+import { buildCompareExcelBuffer, buildOperationExcelBuffer, readDB, writeOperationExcelFile } from "@/lib/drive-store";
 import { PANEL_COOKIE, verifyPanelSession } from "@/lib/panel-auth";
 import { safePathPart } from "@/lib/utils";
 
@@ -28,13 +28,20 @@ export async function GET(
         : "https");
     const baseUrl = `${proto}://${host}`;
 
-    if (new URL(req.url).searchParams.get("only") === "fire") {
-      const fireBuf = await buildMissingExcelBuffer(db, opId);
-      return new NextResponse(new Uint8Array(fireBuf), {
+    if (new URL(req.url).searchParams.get("only") === "compare") {
+      // Sayım bitmeden (operasyon aktifken) fire sonuçları kesin değildir
+      if (op.status === "active") {
+        return NextResponse.json(
+          { error: "Karşılaştırma tablosu sayım bitince (operasyon pasife alınınca) indirilebilir." },
+          { status: 400 },
+        );
+      }
+      const compareBuf = await buildCompareExcelBuffer(db, opId);
+      return new NextResponse(new Uint8Array(compareBuf), {
         headers: {
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="${safePathPart(op.code)}_Fire_Listesi.xlsx"`,
+          "Content-Disposition": `attachment; filename="${safePathPart(op.code)}_Eski_Liste_Fire_Karsilastirma.xlsx"`,
         },
       });
     }
