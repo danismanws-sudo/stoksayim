@@ -1,6 +1,7 @@
 export type UserRole = "patron" | "yonetici" | "saha";
 export type OperationMode = "blank" | "compare";
-export type OperationStatus = "draft" | "active" | "closed";
+/** closed = pasif (geçici durdurma), finished = operasyon bitti */
+export type OperationStatus = "draft" | "active" | "closed" | "finished";
 export type ItemCondition = "saglam" | "hurda" | "arizali";
 
 export const CONDITION_LABEL: Record<ItemCondition, string> = {
@@ -13,6 +14,7 @@ export const STATUS_LABEL: Record<OperationStatus, string> = {
   draft: "Taslak",
   active: "Aktif",
   closed: "Pasif",
+  finished: "Bitti",
 };
 
 export const MODE_LABEL: Record<OperationMode, string> = {
@@ -142,6 +144,7 @@ export const COMPARE_STATUS_LABEL: Record<CompareStatus, string> = {
 
 /** Karşılaştırma tablosunun sütunları (panel ve Excel'de aynı sıra ve başlıklar) */
 export const COMPARE_COLUMNS = [
+  "Sırası",
   "Durum",
   "Barkodu",
   "Beklenen Ürün",

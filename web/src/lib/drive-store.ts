@@ -779,19 +779,20 @@ export async function pushToGoogleDriveWebhook(
 function addCompareSheet(wb: ExcelJS.Workbook, db: DatabaseState, operationId: string) {
   const compareRows = computeCompareRows(db, operationId);
   const wsComp = wb.addWorksheet("Fire ve Karşılaştırma");
-  const compKeys = ["status", "barcode", "exp_desc", "cnt_desc", "exp_loc", "cnt_loc", "exp_cond", "cnt_cond"];
+  const compKeys = ["idx", "status", "barcode", "exp_desc", "cnt_desc", "exp_loc", "cnt_loc", "exp_cond", "cnt_cond"];
   wsComp.columns = COMPARE_COLUMNS.map((header, i) => ({
     header,
     key: compKeys[i],
-    width: i === 0 ? 20 : i === 2 || i === 3 ? 26 : 22,
+    width: i === 0 ? 9 : i === 3 || i === 4 ? 26 : 22,
   }));
   const h2 = wsComp.getRow(1);
   h2.font = { bold: true, color: { argb: "FFFFFFFF" } };
   h2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD10000" } };
   h2.height = 22;
 
-  compareRows.forEach((r) => {
+  compareRows.forEach((r, idx) => {
     wsComp.addRow({
+      idx: idx + 1,
       status: COMPARE_STATUS_LABEL[r.status],
       barcode: r.barcode,
       exp_desc: r.expected_description ?? "-",

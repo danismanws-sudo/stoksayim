@@ -284,7 +284,11 @@ export async function POST(req: NextRequest) {
         const op = db.operations.find((o) => o.id === draft.operation_id);
         if (!op) throw new Error("Operasyon bulunamadı");
         if (op.status !== "active" && !isPanelAuthed(req)) {
-          throw new Error("Bu operasyon pasife alındı; yeni kayıt yapılamaz.");
+          throw new Error(
+            op.status === "finished"
+              ? "Bu operasyon bitti; yeni kayıt yapılamaz."
+              : "Bu operasyon pasife alındı; yeni kayıt yapılamaz.",
+          );
         }
 
         // Barkod eşsizlik kontrolü (TC kimlik kuralı)
@@ -410,6 +414,19 @@ export async function POST(req: NextRequest) {
       }
 
       const created = await mutateDB(async (db) => {
+        // Çift tıklama / tekrar gönderim koruması: aynı ad ve müşteriyle son 1 dakikada
+        // açılmış operasyon varsa yenisini açma, onu döndür
+        const recent = db.operations.find(
+          (o) =>
+            o.name === name &&
+            (o.client_name ?? "") === clientName &&
+            Date.now() - new Date(o.created_at).getTime() < 60_000,
+        );
+        if (recent) {
+          const link = db.operation_links.find((l) => l.operation_id === recent.id) ?? null;
+          return { op: recent, link };
+        }
+
         const num = String(db.seq).padStart(4, "0");
         db.seq += 1;
         const year = new Date().getFullYear();
@@ -463,7 +480,7 @@ export async function POST(req: NextRequest) {
     if (action === "update_operation_status") {
       const opId = String(body.operation_id ?? "");
       const status = body.status as OperationStatus;
-      if (!["draft", "active", "closed"].includes(status)) {
+      if (!["draft", "active", "closed", "finished"].includes(status)) {
         return NextResponse.json({ error: "Geçersiz durum" }, { status: 400 });
       }
       await mutateDB((db) => {

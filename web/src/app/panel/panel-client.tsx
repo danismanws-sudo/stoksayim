@@ -7,7 +7,11 @@ import {
   Download,
   ExternalLink,
   FileSpreadsheet,
+  ArrowLeft,
+  Flag,
+  FolderOpen,
   HardDrive,
+  Maximize2,
   Info,
   Tags,
   Image as ImageIcon,
@@ -29,7 +33,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ItemSheet, type ItemSubmit } from "@/components/field/item-sheet";
 import { Badge, Button, Card, Field, FullScreenLoader, Input, Logo, Sheet } from "@/components/ui";
@@ -43,6 +47,7 @@ import type {
   Operation,
   OperationLink,
   OperationMode,
+  OperationStatus,
   ProductType,
 } from "@/lib/types";
 import {
@@ -87,6 +92,122 @@ const COMPARE_TONE: Record<CompareStatus, "scan" | "warn" | "brand" | "ok"> = {
   bulunan: "ok",
 };
 
+const STATUS_TONE: Record<OperationStatus, "ok" | "warn" | "brand" | "neutral"> = {
+  active: "ok",
+  closed: "warn",
+  finished: "brand",
+  draft: "neutral",
+};
+
+const OVERVIEW_GROUPS: { status: OperationStatus; title: string; empty: string; tab: string }[] = [
+  { status: "active", title: "Aktif operasyonlar", empty: "Şu an süren bir sayım yok.", tab: "bg-ok" },
+  { status: "closed", title: "Pasif operasyonlar", empty: "Pasife alınmış operasyon yok.", tab: "bg-warn" },
+  { status: "finished", title: "Biten operasyonlar", empty: "Henüz biten operasyon yok.", tab: "bg-brand" },
+];
+
+/** Panel açılış ekranı: operasyonlar durumlarına göre ayrılmış, klasör gibi açılan kartlar */
+function OperationsOverview({
+  operations,
+  counts,
+  onOpen,
+  onCreate,
+}: {
+  operations: Operation[];
+  counts: Record<string, { items: number; members: number }>;
+  onOpen: (id: string) => void;
+  onCreate: () => void;
+}) {
+  if (operations.length === 0) {
+    return (
+      <Card className="mx-auto mt-10 flex max-w-md flex-col items-center gap-3 p-8 text-center">
+        <FolderOpen className="size-10 text-ink-mute" />
+        <h2 className="text-lg font-bold">Henüz operasyon yok</h2>
+        <p className="text-sm text-ink-dim">İlk sayım operasyonunu açarak başlayın.</p>
+        <Button onClick={onCreate}>
+          <Plus className="size-4" /> Yeni Operasyon Aç
+        </Button>
+      </Card>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-8">
+      <div>
+        <h1 className="text-2xl font-extrabold">Operasyonlar</h1>
+        <p className="mt-1 text-sm text-ink-dim">
+          Toplam {operations.length} operasyon. Açmak istediğiniz operasyona tıklayın.
+        </p>
+      </div>
+      {OVERVIEW_GROUPS.map((g) => {
+        const list = operations.filter(
+          (o) => o.status === g.status || (g.status === "closed" && o.status === "draft"),
+        );
+        return (
+          <section key={g.status} aria-label={g.title}>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink-dim">
+              <span className={cn("size-2.5 rounded-full", g.tab)} />
+              {g.title} ({list.length})
+            </h2>
+            {list.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-line px-4 py-5 text-sm text-ink-mute">
+                {g.empty}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {list.map((op) => {
+                  const c = counts[op.id] ?? { items: 0, members: 0 };
+                  return (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => onOpen(op.id)}
+                      className="group relative mt-3 text-left outline-none"
+                    >
+                      {/* Klasör sekmesi */}
+                      <span
+                        className={cn(
+                          "absolute -top-3 left-0 h-4 w-24 rounded-t-lg opacity-80 transition group-hover:opacity-100",
+                          g.tab,
+                        )}
+                      />
+                      <span className="relative flex flex-col gap-3 rounded-2xl rounded-tl-none border border-line-strong bg-surface-2 p-4 transition duration-150 group-hover:-translate-y-0.5 group-hover:border-brand group-hover:bg-surface-3 group-hover:shadow-xl group-hover:shadow-black/40 group-focus-visible:border-brand group-focus-visible:ring-2 group-focus-visible:ring-brand/60">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-sm font-extrabold text-[#9fb1ff]">{op.code}</span>
+                          <Badge tone={STATUS_TONE[op.status]}>{STATUS_LABEL[op.status]}</Badge>
+                        </span>
+                        <span>
+                          <span className="block truncate text-base font-bold text-ink">{op.name}</span>
+                          <span className="block truncate text-xs text-ink-mute">
+                            {op.client_name || "Müşteri belirtilmedi"}
+                          </span>
+                        </span>
+                        <span className="flex items-end justify-between gap-3 border-t border-line pt-3">
+                          <span>
+                            <span className="tabular block text-2xl font-extrabold leading-none">{c.items}</span>
+                            <span className="text-xs text-ink-mute">sayılan ürün</span>
+                          </span>
+                          <span className="text-right text-xs text-ink-dim">
+                            <span className="flex items-center justify-end gap-1">
+                              <Users className="size-3.5" /> {c.members} personel
+                            </span>
+                            <span className="text-ink-mute">{fmtDateTime(op.created_at).split(" ")[0]}</span>
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-ink-mute transition group-hover:text-[#9fb1ff] group-focus-visible:text-[#9fb1ff]">
+                          <FolderOpen className="size-3.5" /> Operasyonu aç
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export function PanelClient() {
   const [loading, setLoading] = useState(true);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -116,6 +237,12 @@ export function PanelClient() {
   const [locEditOpen, setLocEditOpen] = useState(false);
   const [locEditValue, setLocEditValue] = useState("");
   const [opBusy, setOpBusy] = useState(false);
+  const selectedRef = useRef("");
+  const [creatingOp, setCreatingOp] = useState(false);
+  const [createdOp, setCreatedOp] = useState<Operation | null>(null);
+  // Genel bakış: operasyon başına sayılan ürün ve personel sayıları
+  const [opCounts, setOpCounts] = useState<Record<string, { items: number; members: number }>>({});
+  const [qrZoom, setQrZoom] = useState<{ src: string; title: string } | null>(null);
 
   // PC'den ürün ekleme / düzenleme
   const [pcEditOpen, setPcEditOpen] = useState(false);
@@ -139,7 +266,9 @@ export function PanelClient() {
   const [newTypeName, setNewTypeName] = useState("");
 
   // Drive ayarları
-  const loadAll = useCallback(async (targetOpId?: string) => {
+  const loadAll = useCallback(async (targetOpId?: string | null) => {
+    // Açık seçim anında kaydedilir; arka plandaki yenileme eski seçimi geri getiremez
+    if (targetOpId !== undefined) selectedRef.current = targetOpId ?? "";
     try {
       const res = await fetch("/api/drive");
       const data = await res.json();
@@ -148,9 +277,21 @@ export function PanelClient() {
       setCategories((data.categories as Category[]) ?? []);
       setProductTypes((data.product_types as ProductType[]) ?? []);
 
-      const activeId = targetOpId || selectedOpId || ops[0]?.id || "";
+      const counts: Record<string, { items: number; members: number }> = {};
+      const bump = (id: string, key: "items" | "members") => {
+        counts[id] ??= { items: 0, members: 0 };
+        counts[id][key] += 1;
+      };
+      for (const it of (data.count_items as CountItem[]) ?? []) bump(it.operation_id, "items");
+      for (const m of (data.operation_members as OperationMemberRecord[]) ?? [])
+        bump(m.operation_id, "members");
+      setOpCounts(counts);
+
+      // Panel açılışta genel bakışı gösterir; operasyon seçilmeden detaya girilmez
+      const wanted = selectedRef.current;
+      const activeId = ops.some((o) => o.id === wanted) ? wanted : "";
+      setSelectedOpId(activeId);
       if (activeId) {
-        setSelectedOpId(activeId);
         const opRes = await fetch(`/api/drive?opId=${encodeURIComponent(activeId)}`);
         if (opRes.ok) {
           const opData = await opRes.json();
@@ -166,7 +307,7 @@ export function PanelClient() {
     } finally {
       setLoading(false);
     }
-  }, [selectedOpId]);
+  }, []);
 
   useEffect(() => {
     void loadAll();
@@ -263,7 +404,8 @@ export function PanelClient() {
 
   const createOperation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!opName.trim()) return;
+    if (!opName.trim() || creatingOp) return;
+    setCreatingOp(true);
     try {
       const res = await fetch("/api/drive", {
         method: "POST",
@@ -279,16 +421,24 @@ export function PanelClient() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast.success(`${data.op.code} operasyonu ve özel QR kodu oluşturuldu!`);
-      setNewOpOpen(false);
+      setCreatedOp(data.op as Operation);
       setOpName("");
       setOpClient("");
       setOpNotes("");
       setOpLocations("");
-      await loadAll(data.op.id);
+      await loadAll();
     } catch (err) {
       toast.error(humanError(err));
+    } finally {
+      setCreatingOp(false);
     }
+  };
+
+  const closeNewOp = (openCreated: boolean) => {
+    const created = createdOp;
+    setNewOpOpen(false);
+    setCreatedOp(null);
+    if (openCreated && created) void loadAll(created.id);
   };
 
   const postAction = async (payload: Record<string, unknown>) => {
@@ -302,27 +452,56 @@ export function PanelClient() {
     return data;
   };
 
-  const toggleOperationStatus = async () => {
+  const changeOperationStatus = async (status: OperationStatus) => {
     if (!currentOp) return;
-    const toPassive = currentOp.status === "active";
-    const msg = toPassive
-      ? `"${currentOp.name}" pasife alınsın mı?\n\nSaha personeli bu operasyona QR/link ile giremez ve yeni kayıt yapamaz. Kayıtlar silinmez, istediğiniz zaman tekrar aktifleştirebilirsiniz.`
-      : `"${currentOp.name}" tekrar aktifleştirilsin mi?`;
+    const name = `"${currentOp.name}"`;
+    const msg =
+      status === "closed"
+        ? `${name} pasife alınsın mı?\n\nSaha personeli bu operasyona QR/link ile giremez ve yeni kayıt yapamaz. Kayıtlar silinmez, istediğiniz zaman tekrar aktifleştirebilirsiniz.`
+        : status === "finished"
+          ? `${name} bitirilsin mi?\n\nOperasyon "Bitti" olarak işaretlenir, saha personeli kayıt yapamaz ve sayılmayan ürünler Fire sayılır. İsterseniz sonradan kaldığı yerden devam ettirebilirsiniz.`
+          : currentOp.status === "finished"
+            ? `${name} kaldığı yerden devam ettirilsin mi?`
+            : `${name} tekrar aktifleştirilsin mi?`;
     if (!confirm(msg)) return;
     setOpBusy(true);
     try {
-      await postAction({
-        action: "update_operation_status",
-        operation_id: currentOp.id,
-        status: toPassive ? "closed" : "active",
-      });
-      toast.success(toPassive ? "Operasyon pasife alındı" : "Operasyon aktifleştirildi");
+      await postAction({ action: "update_operation_status", operation_id: currentOp.id, status });
+      toast.success(
+        status === "closed"
+          ? "Operasyon pasife alındı"
+          : status === "finished"
+            ? "Operasyon bitirildi"
+            : "Operasyon aktif, sayım devam ediyor",
+      );
       await loadAll(currentOp.id);
     } catch (err) {
       toast.error(humanError(err));
     } finally {
       setOpBusy(false);
     }
+  };
+
+  // QR görselini dosya olarak paylaş (telefonda WhatsApp seçilebilir); desteklenmiyorsa indir + WhatsApp'ta linki aç
+  const shareQr = async (qrSrc: string, joinUrl: string, fileName: string) => {
+    if (!currentOp) return;
+    const text = `Detay Stok Sayım — ${currentOp.name} (${currentOp.code}) sayımına katılmak için QR kodu okutun veya linke tıklayın:\n${joinUrl}`;
+    try {
+      const blob = await (await fetch(qrSrc)).blob();
+      const file = new File([blob], fileName, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text });
+        return;
+      }
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") return;
+    }
+    const a = document.createElement("a");
+    a.href = qrSrc;
+    a.download = fileName;
+    a.click();
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noreferrer");
+    toast.info("QR görseli indirildi. WhatsApp sohbetine ek olarak sürükleyip gönderebilirsiniz.");
   };
 
   const deleteOperation = async () => {
@@ -339,9 +518,7 @@ export function PanelClient() {
     try {
       await postAction({ action: "delete_operation", operation_id: currentOp.id });
       toast.success(`${currentOp.code} silindi`);
-      const next = operations.find((o) => o.id !== currentOp.id);
-      setSelectedOpId(next?.id ?? "");
-      await loadAll(next?.id ?? "");
+      await loadAll(null);
     } catch (err) {
       toast.error(humanError(err));
     } finally {
@@ -484,23 +661,31 @@ export function PanelClient() {
 
           {/* Operasyon Seçici + Yeni Operasyon */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <select
-              value={selectedOpId}
-              onChange={(e) => void loadAll(e.target.value)}
-              className="h-11 rounded-xl border border-line-strong bg-surface-2 px-3.5 text-sm font-semibold text-ink outline-none focus:border-brand"
-            >
-              {operations.map((op) => (
-                <option key={op.id} value={op.id}>
-                  {op.code} — {op.name} ({STATUS_LABEL[op.status]})
-                </option>
-              ))}
-            </select>
+            {currentOp && (
+              <>
+                <Button size="md" variant="outline" onClick={() => void loadAll(null)}>
+                  <ArrowLeft className="size-4" /> Tüm Operasyonlar
+                </Button>
+                <select
+                  value={selectedOpId}
+                  onChange={(e) => void loadAll(e.target.value)}
+                  aria-label="Operasyon değiştir"
+                  className="h-11 max-w-72 rounded-xl border border-line-strong bg-surface-2 px-3.5 text-sm font-semibold text-ink outline-none focus:border-brand"
+                >
+                  {operations.map((op) => (
+                    <option key={op.id} value={op.id}>
+                      {op.code} — {op.name} ({STATUS_LABEL[op.status]})
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
 
             <Button size="md" onClick={() => setNewOpOpen(true)}>
               <Plus className="size-4" /> Yeni Operasyon Aç
             </Button>
 
-            {currentOp && (
+            {currentOp?.status === "active" && (
               <Link href={`/sayim/${currentOp.id}`}>
                 <Button size="md" variant="scan">
                   <Smartphone className="size-4" /> Saha Kamera Ekranı
@@ -508,14 +693,22 @@ export function PanelClient() {
               </Link>
             )}
 
-            <Button size="md" variant="ghost" onClick={() => void logout()} title="Çıkış yap">
-              <LogOut className="size-4" /> Çıkış
+            <Button size="md" variant="danger" onClick={() => void logout()}>
+              <LogOut className="size-4" /> Çıkış Yap
             </Button>
           </div>
         </div>
       </header>
 
       <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-6 px-5 py-6">
+        {!currentOp && (
+          <OperationsOverview
+            operations={operations}
+            counts={opCounts}
+            onOpen={(id) => void loadAll(id)}
+            onCreate={() => setNewOpOpen(true)}
+          />
+        )}
         {currentOp && (
           <>
             {/* ---------- Operasyon Özet & KPI Kartları ---------- */}
@@ -525,9 +718,7 @@ export function PanelClient() {
                   <span className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
                     Seçili Operasyon
                   </span>
-                  <Badge tone={currentOp.status === "active" ? "ok" : "warn"}>
-                    {STATUS_LABEL[currentOp.status]}
-                  </Badge>
+                  <Badge tone={STATUS_TONE[currentOp.status]}>{STATUS_LABEL[currentOp.status]}</Badge>
                 </div>
                 <div className="mt-1 font-mono text-lg font-extrabold text-[#9fb1ff]">
                   {currentOp.code}
@@ -549,17 +740,40 @@ export function PanelClient() {
                   >
                     <MapPin className="size-3.5" /> Lokasyonlar ({currentOp.locations?.length ?? 0})
                   </Button>
-                  <Button size="sm" variant="outline" disabled={opBusy} onClick={() => void toggleOperationStatus()}>
-                    {currentOp.status === "active" ? (
-                      <>
-                        <PauseCircle className="size-3.5" /> Pasife Al
-                      </>
-                    ) : (
-                      <>
-                        <PlayCircle className="size-3.5" /> Aktifleştir
-                      </>
-                    )}
-                  </Button>
+                  {currentOp.status === "finished" ? (
+                    <Button size="sm" disabled={opBusy} onClick={() => void changeOperationStatus("active")}>
+                      <PlayCircle className="size-3.5" /> Kaldığı Yerden Devam Et
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={opBusy}
+                        onClick={() =>
+                          void changeOperationStatus(currentOp.status === "active" ? "closed" : "active")
+                        }
+                      >
+                        {currentOp.status === "active" ? (
+                          <>
+                            <PauseCircle className="size-3.5" /> Pasife Al
+                          </>
+                        ) : (
+                          <>
+                            <PlayCircle className="size-3.5" /> Aktifleştir
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={opBusy}
+                        onClick={() => void changeOperationStatus("finished")}
+                      >
+                        <Flag className="size-3.5" /> Operasyonu Bitir
+                      </Button>
+                    </>
+                  )}
                   <Button size="sm" variant="danger" disabled={opBusy} onClick={() => void deleteOperation()}>
                     <Trash2 className="size-3.5" /> Operasyonu Sil
                   </Button>
@@ -616,15 +830,26 @@ export function PanelClient() {
                   <span className="text-xs font-semibold uppercase tracking-wider text-ink-mute">
                     Google Drive Veritabanı
                   </span>
-                  <HardDrive className="size-4 text-ok" />
+                  <HardDrive
+                    className={cn("size-4", currentOp.status === "active" ? "text-ok" : "text-ink-mute")}
+                  />
                 </div>
-                <div className="mt-1 flex items-center gap-2 text-sm font-bold text-ok">
-                  <span className="relative flex size-2.5">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-75" />
-                    <span className="relative inline-flex size-2.5 rounded-full bg-ok" />
-                  </span>
-                  Canlı Senkron Aktif
-                </div>
+                {currentOp.status === "active" ? (
+                  <div className="mt-1 flex items-center gap-2 text-sm font-bold text-ok">
+                    <span className="relative flex size-2.5">
+                      <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-75" />
+                      <span className="relative inline-flex size-2.5 rounded-full bg-ok" />
+                    </span>
+                    Canlı Senkron Aktif
+                  </div>
+                ) : (
+                  <div className="mt-1 flex items-center gap-2 text-sm font-bold text-ink-dim">
+                    <span className="inline-flex size-2.5 rounded-full bg-ink-mute" />
+                    {currentOp.status === "finished"
+                      ? "Operasyon bitti · veriler Drive'da"
+                      : "Senkron durdu · operasyon pasif"}
+                  </div>
+                )}
                 <div className="mt-1 truncate text-xs text-ink-mute">
                   Klasör: Operasyonlar/{currentOp.code}
                 </div>
@@ -998,8 +1223,9 @@ export function PanelClient() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line">
-                        {filteredCompare.map((r) => (
+                        {filteredCompare.map((r, idx) => (
                           <tr key={r.barcode} className="hover:bg-white/[0.02]">
+                            <td className="px-4 py-3 tabular text-ink-mute">{idx + 1}</td>
                             <td className="px-4 py-3">
                               <Badge tone={COMPARE_TONE[r.status]}>
                                 {r.status === "bulunan" ? (
@@ -1105,12 +1331,26 @@ export function PanelClient() {
                       >
                         <div className="flex flex-col items-center gap-2">
                           {qrSrc ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={qrSrc}
-                              alt="Operasyon QR Kodu"
-                              className="size-40 rounded-2xl border border-line bg-white p-2 shadow-lg"
-                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setQrZoom({ src: qrSrc, title: `${currentOp.code} — ${currentOp.name}` })
+                              }
+                              className="group relative rounded-2xl"
+                              aria-label="QR kodu büyüt"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={qrSrc}
+                                alt="Operasyon QR Kodu"
+                                className="size-40 rounded-2xl border border-line bg-white p-2 shadow-lg"
+                              />
+                              <span className="absolute inset-0 grid place-items-center rounded-2xl bg-black/55 text-xs font-bold text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                                <span className="flex items-center gap-1.5">
+                                  <Maximize2 className="size-4" /> Büyüt
+                                </span>
+                              </span>
+                            </button>
                           ) : (
                             <div className="grid size-40 place-items-center rounded-2xl bg-white/5">
                               <QrCode className="size-10 text-ink-mute" />
@@ -1162,9 +1402,21 @@ export function PanelClient() {
                               rel="noreferrer"
                             >
                               <Button size="sm" variant="outline">
-                                <Send className="size-4" /> WhatsApp&apos;ta Paylaş
+                                <Send className="size-4" /> Linki WhatsApp&apos;ta Paylaş
                               </Button>
                             </a>
+
+                            {qrSrc && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  void shareQr(qrSrc, joinUrl, `${currentOp.code}_QR_${l.token}.png`)
+                                }
+                              >
+                                <QrCode className="size-4" /> QR&apos;ı WhatsApp ile Paylaş
+                              </Button>
+                            )}
 
                             <Link href={`/j/${l.token}`}>
                               <Button size="sm" variant="ghost">
@@ -1372,15 +1624,44 @@ export function PanelClient() {
       {/* ---------- Modal: Yeni Operasyon Aç ---------- */}
       <Sheet
         open={newOpOpen}
-        onClose={() => setNewOpOpen(false)}
-        title="Yeni Sayım Operasyonu Aç"
+        onClose={() => closeNewOp(false)}
+        title={createdOp ? "Operasyon açıldı" : "Yeni Sayım Operasyonu Aç"}
         footer={
-          <Button size="xl" className="w-full" onClick={createOperation} disabled={!opName.trim()}>
-            Operasyonu ve Özel QR Kodu Oluştur
-          </Button>
+          createdOp ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Button size="lg" variant="outline" onClick={() => closeNewOp(false)}>
+                Kapat
+              </Button>
+              <Button size="lg" onClick={() => closeNewOp(true)}>
+                <FolderOpen className="size-5" /> Operasyonu Aç
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="xl"
+              className="w-full"
+              onClick={createOperation}
+              loading={creatingOp}
+              disabled={!opName.trim() || creatingOp}
+            >
+              {creatingOp ? "Operasyon oluşturuluyor…" : "Operasyonu ve Özel QR Kodu Oluştur"}
+            </Button>
+          )
         }
       >
-        <form onSubmit={createOperation} className="space-y-4">
+        {createdOp && (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <div className="grid size-20 place-items-center rounded-full bg-ok-soft">
+              <CheckCircle2 className="size-12 text-ok" />
+            </div>
+            <div className="font-mono text-xl font-extrabold text-ok">{createdOp.code}</div>
+            <div className="text-base font-bold">{createdOp.name}</div>
+            <p className="max-w-xs text-sm text-ink-dim">
+              Operasyon ve özel QR kodu oluşturuldu. Saha personeli artık bu operasyona katılabilir.
+            </p>
+          </div>
+        )}
+        <form onSubmit={createOperation} className={cn("space-y-4", createdOp && "hidden")}>
           <Field label="Operasyon / Proje Adı" required>
             <Input
               value={opName}
@@ -1466,6 +1747,7 @@ export function PanelClient() {
         productTypes={productTypes}
         existing={editingItem}
         prefill={null}
+        locationOptions={Array.from(new Set([...(currentOp?.locations ?? []), ...uniqueLocations]))}
         existingPhotoUrl={
           editingItem?.photo_path ? `/api/drive/photo/${editingItem.photo_path}` : null
         }
@@ -1562,6 +1844,28 @@ export function PanelClient() {
           </div>
         )}
       </Sheet>
+      {qrZoom && (
+        <div
+          className="fixed inset-0 z-[60] grid place-items-center bg-black/80 p-6 backdrop-blur-sm"
+          onClick={() => setQrZoom(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Büyütülmüş QR kod"
+        >
+          <div className="flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrZoom.src}
+              alt="Operasyon QR Kodu (büyük)"
+              className="size-[min(80vw,70vh)] rounded-3xl bg-white p-5"
+            />
+            <div className="text-center text-base font-bold text-white">{qrZoom.title}</div>
+            <Button size="md" variant="outline" autoFocus onClick={() => setQrZoom(null)}>
+              Kapat
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

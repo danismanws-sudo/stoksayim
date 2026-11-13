@@ -265,6 +265,11 @@ export function FieldClient({ operationId }: { operationId: string }) {
     }
   };
 
+  const locationOptions = useMemo(
+    () => Array.from(new Set([...(op?.locations ?? []), ...items.map((i) => i.location)])),
+    [op, items],
+  );
+
   const scannerActive =
     boot === "ok" &&
     tab === "scan" &&
@@ -303,10 +308,13 @@ export function FieldClient({ operationId }: { operationId: string }) {
       <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
         <Logo />
         <Card className="p-6">
-          <h1 className="text-xl font-bold">Bu operasyon şu an aktif değil</h1>
+          <h1 className="text-xl font-bold">
+            {op.status === "finished" ? "Bu operasyon tamamlandı" : "Bu operasyon şu an aktif değil"}
+          </h1>
           <p className="mt-2 text-sm text-ink-dim">
-            Yönetici bu sayım operasyonunu pasife aldı. Yeni kayıt yapılamaz; lütfen yöneticinizle
-            iletişime geçin.
+            {op.status === "finished"
+              ? "Yönetici bu sayım operasyonunu bitirdi. Yeni kayıt yapılamaz."
+              : "Yönetici bu sayım operasyonunu pasife aldı. Yeni kayıt yapılamaz; lütfen yöneticinizle iletişime geçin."}
           </p>
         </Card>
       </main>
@@ -588,6 +596,7 @@ export function FieldClient({ operationId }: { operationId: string }) {
         existing={editing}
         prefill={prefill}
         existingPhotoUrl={editPhotoUrl}
+        locationOptions={locationOptions}
         onSubmit={submit}
       />
 

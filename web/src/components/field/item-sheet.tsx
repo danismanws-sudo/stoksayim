@@ -43,6 +43,7 @@ export function ItemSheet({
   existing,
   prefill,
   existingPhotoUrl,
+  locationOptions = [],
   onSubmit,
 }: {
   open: boolean;
@@ -55,11 +56,14 @@ export function ItemSheet({
   existing: CountItem | null;
   prefill: ExpectedItem | null;
   existingPhotoUrl: string | null;
+  /** Kayıt düzenlenirken seçilebilecek lokasyonlar (yenisi de yazılabilir) */
+  locationOptions?: string[];
   onSubmit: (s: ItemSubmit) => Promise<void>;
 }) {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [typeId, setTypeId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [loc, setLoc] = useState(location);
   const [model, setModel] = useState("");
   const [color, setColor] = useState("");
   const [dimensions, setDimensions] = useState("");
@@ -94,6 +98,7 @@ export function ItemSheet({
     setCategoryId(src?.category_id ?? null);
     setTypeId(src?.product_type_id ?? null);
     setDescription(src?.description ?? prefill?.description ?? "");
+    setLoc(location);
     setModel(src?.model ?? prefill?.model ?? "");
     setColor(src?.color ?? prefill?.color ?? "");
     setDimensions(src?.dimensions ?? prefill?.dimensions ?? "");
@@ -111,7 +116,7 @@ export function ItemSheet({
       );
       if (c) setCategoryId(c.id);
     }
-  }, [open, barcode, existing, prefill, categories]);
+  }, [open, barcode, existing, prefill, categories, location]);
 
   const category = categories.find((c) => c.id === categoryId) ?? null;
   const types = useMemo(
@@ -167,7 +172,7 @@ export function ItemSheet({
     description.trim() || (category && !category.is_other ? category.name : "");
 
   const submit = async () => {
-    if (!barcode.trim() || !location.trim()) {
+    if (!barcode.trim() || !loc.trim()) {
       toast.error("Barkod ve lokasyon bilgisi eksik");
       return;
     }
@@ -185,7 +190,7 @@ export function ItemSheet({
           operation_id: operationId,
           barcode: barcode.trim(),
           description: resolvedDescription,
-          location: location.trim(),
+          location: loc.trim(),
           category_id: categoryId,
           product_type_id: typeId,
           model: model.trim() || null,
@@ -231,10 +236,34 @@ export function ItemSheet({
       }
     >
       <div className="flex flex-col gap-5">
-        <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2 text-sm text-ink-dim">
-          <MapPin className="size-4 text-scan" /> <span className="truncate">{location}</span>
-          {prefill && <span className="ml-auto shrink-0 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-semibold text-ok">Listede var</span>}
-        </div>
+        {existing ? (
+          <Field
+            label="Lokasyon (Oda / Bölge)"
+            required
+            hint="Listeden seçin ya da yeni bir lokasyon yazın."
+          >
+            <div className="relative">
+              <MapPin className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-scan" />
+              <Input
+                value={loc}
+                onChange={(e) => setLoc(e.target.value)}
+                list="item-location-options"
+                className="pl-10"
+                placeholder="Örn. 3340 veya Kaplan Toplantı Odası"
+              />
+              <datalist id="item-location-options">
+                {locationOptions.map((l) => (
+                  <option key={l} value={l} />
+                ))}
+              </datalist>
+            </div>
+          </Field>
+        ) : (
+          <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2 text-sm text-ink-dim">
+            <MapPin className="size-4 text-scan" /> <span className="truncate">{location}</span>
+            {prefill && <span className="ml-auto shrink-0 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-semibold text-ok">Listede var</span>}
+          </div>
+        )}
 
         {/* 1) Ürün cinsi */}
         <section>
